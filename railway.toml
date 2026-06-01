@@ -1,0 +1,6 @@
+[build]
+  builder = "DOCKERFILE"
+  dockerfile_path = "Dockerfile"
+
+[service]
+  port = 8000
