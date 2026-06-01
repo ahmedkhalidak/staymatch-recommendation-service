@@ -4,10 +4,19 @@ from app.utils.location import geo_distance, governorate_center
 
 class LocationScorer(BaseScorer):
     def score(self, user, candidate, context=None):
-        user_city = getattr(user, "preferred_city", None) or getattr(context, "preferred_city", None)
-        user_gov = getattr(user, "preferred_government", None) or getattr(context, "preferred_government", None)
+        user_city = None
+        user_gov = None
 
-        if user_city is None and user_gov is None:
+        if hasattr(user, "preferred_city") and user.preferred_city:
+            user_city = user.preferred_city
+            user_gov = getattr(user, "preferred_government", None) or user_city
+        elif hasattr(user, "preferred_government") and user.preferred_government:
+            user_gov = user.preferred_government
+        elif context and isinstance(context, dict):
+            user_city = context.get("preferred_city")
+            user_gov = context.get("preferred_government")
+
+        if not user_city and not user_gov:
             return 0.5
 
         prop_city = getattr(candidate, "city", None) or ""

@@ -18,7 +18,10 @@ class AmenityScorer(BaseScorer):
 
         for amenity in user_amenities:
             attr = amenity.replace(" ", "_")
-            if getattr(property_amenities, attr, False):
+            am_value = getattr(property_amenities, attr, None)
+            if am_value is None and candidate is not None:
+                am_value = getattr(candidate, attr, None)
+            if am_value:
                 matched += 1
 
         return matched / total if total > 0 else 0.5
@@ -28,8 +31,8 @@ class AmenityScorer(BaseScorer):
         pref = context.get("preferences") if context else None
         source = pref or user
         for field in self.AMENITY_FIELDS:
-            if getattr(source, field, False):
+            if hasattr(source, field) and getattr(source, field):
                 amenities.append(field)
-        if getattr(user, "furnished", False):
+        if hasattr(source, "furnished") and getattr(source, "furnished"):
             amenities.append("furnished")
         return amenities

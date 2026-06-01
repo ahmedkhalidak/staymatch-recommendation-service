@@ -1,19 +1,15 @@
-from app.database.session import get_session
-from app.database.models.user import QuestionnaireCategory, QuestionnaireQuestion
+from app.repositories.property_repo import QuestionnaireRepository
 
 
 class QuestionnaireService:
     def __init__(self):
-        self.session = get_session()
+        self.repo = QuestionnaireRepository()
 
     def get_all_questions(self):
-        categories = self.session.query(QuestionnaireCategory).order_by(QuestionnaireCategory.sort_order).all()
+        categories = self.repo.get_categories()
         result = []
         for cat in categories:
-            questions = self.session.query(QuestionnaireQuestion).filter(
-                QuestionnaireQuestion.category_id == cat.id,
-                QuestionnaireQuestion.is_active == True
-            ).order_by(QuestionnaireQuestion.sort_order).all()
+            questions = cat.questions if hasattr(cat, "questions") and cat.questions else []
             result.append({
                 "category": {
                     "id": cat.id,

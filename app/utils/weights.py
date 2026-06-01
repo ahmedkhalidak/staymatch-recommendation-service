@@ -5,7 +5,8 @@ PROPERTY_WEIGHTS = {
     "tenant": 0.10,
     "furnished": 0.05,
     "property_type": 0.10,
-    "recency": 0.05,
+    "recency": 0.00,
+    "questionnaire": 0.05,
 }
 
 ROOM_WEIGHTS = {

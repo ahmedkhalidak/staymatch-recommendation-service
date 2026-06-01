@@ -1,7 +1,14 @@
+from datetime import datetime, timedelta
+
+from sqlalchemy.orm import joinedload
+
 from app.database.session import get_session
 from app.database.models.property import SyncedProperty, SyncedRoom, SyncedAmenity, SyncedAllowedTenant
 from app.database.models.user import UserProfile, UserSearchPreference, QuestionnaireCategory, QuestionnaireQuestion, UserQuestionnaireAnswer
 from app.database.models.recommendation import PropertyRecommendation, RoomRecommendation, RoommateMatch, UserInteraction
+
+
+PAGE_SIZE = 100
 
 
 class PropertyRepository:
@@ -9,16 +16,19 @@ class PropertyRepository:
         self.session = get_session()
 
     def get_all_approved(self):
-        return self.session.query(SyncedProperty).filter(SyncedProperty.is_approved == True).all()
+        return self.session.query(SyncedProperty)\
+            .options(joinedload(SyncedProperty.amenities), joinedload(SyncedProperty.allowed_tenants))\
+            .filter(SyncedProperty.is_approved == True)\
+            .limit(PAGE_SIZE).all()
 
     def get_by_id(self, property_id: int):
         return self.session.query(SyncedProperty).filter(SyncedProperty.id == property_id).first()
 
     def get_by_city(self, city: str):
-        return self.session.query(SyncedProperty).filter(
-            SyncedProperty.is_approved == True,
-            SyncedProperty.city.ilike(f"%{city}%")
-        ).all()
+        return self.session.query(SyncedProperty)\
+            .options(joinedload(SyncedProperty.amenities), joinedload(SyncedProperty.allowed_tenants))\
+            .filter(SyncedProperty.is_approved == True, SyncedProperty.city.ilike(f"%{city}%"))\
+            .limit(PAGE_SIZE).all()
 
     def get_with_relations(self, property_id: int):
         return self.session.query(SyncedProperty)\
@@ -33,10 +43,10 @@ class RoomRepository:
         self.session = get_session()
 
     def get_available(self):
-        return self.session.query(SyncedRoom).filter(
-            SyncedRoom.is_deleted == False,
-            SyncedRoom.capacity_available > 0
-        ).all()
+        return self.session.query(SyncedRoom)\
+            .options(joinedload(SyncedRoom.property), joinedload(SyncedRoom.allowed_tenants))\
+            .filter(SyncedRoom.is_deleted == False, SyncedRoom.capacity_available > 0)\
+            .limit(PAGE_SIZE).all()
 
     def get_by_property(self, property_id: int):
         return self.session.query(SyncedRoom).filter(
@@ -76,7 +86,9 @@ class QuestionnaireRepository:
         self.session = get_session()
 
     def get_categories(self):
-        return self.session.query(QuestionnaireCategory).order_by(QuestionnaireCategory.sort_order).all()
+        return self.session.query(QuestionnaireCategory)\
+            .options(joinedload(QuestionnaireCategory.questions))\
+            .order_by(QuestionnaireCategory.sort_order).all()
 
     def get_questions(self, category_id: int = None):
         query = self.session.query(QuestionnaireQuestion).filter(QuestionnaireQuestion.is_active == True)
@@ -85,11 +97,16 @@ class QuestionnaireRepository:
         return query.order_by(QuestionnaireQuestion.sort_order).all()
 
     def save_answers(self, user_id: str, answers: list[dict]):
-        for answer in answers:
-            existing = self.session.query(UserQuestionnaireAnswer).filter(
+        question_ids = [a["question_id"] for a in answers]
+        existing_answers = {
+            a.question_id: a
+            for a in self.session.query(UserQuestionnaireAnswer).filter(
                 UserQuestionnaireAnswer.user_id == user_id,
-                UserQuestionnaireAnswer.question_id == answer["question_id"]
-            ).first()
+                UserQuestionnaireAnswer.question_id.in_(question_ids)
+            ).all()
+        }
+        for answer in answers:
+            existing = existing_answers.get(answer["question_id"])
             if existing:
                 existing.answer_value = answer["answer_value"]
                 existing.answer_scale = answer.get("answer_scale")
@@ -134,18 +151,21 @@ class SearchPreferenceRepository:
 class RecommendationRepository:
     def __init__(self):
         self.session = get_session()
+        self.ttl_hours = 24
 
     def save_property_recommendations(self, user_id: str, results: list):
         self.session.query(PropertyRecommendation).filter(
             PropertyRecommendation.user_id == user_id
         ).delete()
+        expires_at = datetime.utcnow() + timedelta(hours=self.ttl_hours)
         for rank, (prop, score, breakdown) in enumerate(results):
             self.session.add(PropertyRecommendation(
                 user_id=user_id,
                 property_id=prop.id,
                 score=score,
                 score_breakdown=breakdown,
-                rank=rank
+                rank=rank,
+                expires_at=expires_at
             ))
         self.session.commit()
 
@@ -153,13 +173,15 @@ class RecommendationRepository:
         self.session.query(RoomRecommendation).filter(
             RoomRecommendation.user_id == user_id
         ).delete()
+        expires_at = datetime.utcnow() + timedelta(hours=self.ttl_hours)
         for rank, (room, score, breakdown, prop) in enumerate(results):
             self.session.add(RoomRecommendation(
                 user_id=user_id,
                 room_id=room.id,
                 score=score,
                 score_breakdown=breakdown,
-                rank=rank
+                rank=rank,
+                expires_at=expires_at
             ))
         self.session.commit()
 
@@ -179,6 +201,8 @@ class MatchingRepository:
         self.session = get_session()
 
     def save_match(self, data: dict):
+        expires_at = datetime.utcnow() + timedelta(hours=24)
+        data["expires_at"] = expires_at
         existing = self.session.query(RoommateMatch).filter(
             RoommateMatch.seeker_user_id == data["seeker_user_id"],
             RoommateMatch.room_id == data["room_id"]
@@ -205,8 +229,30 @@ class InteractionRepository:
         interaction = UserInteraction(**data)
         self.session.add(interaction)
         self.session.commit()
+        return interaction
 
-    def get_by_user(self, user_id: str):
+    def get_by_user(self, user_id: str, limit: int = None):
+        q = self.session.query(UserInteraction).filter(
+            UserInteraction.user_id == user_id
+        ).order_by(UserInteraction.created_at.desc())
+        if limit:
+            q = q.limit(limit)
+        return q.all()
+
+    def get_high_dwell(self, user_id: str, min_seconds: int = 10):
+        return self.session.query(UserInteraction).filter(
+            UserInteraction.user_id == user_id,
+            UserInteraction.dwell_seconds >= min_seconds
+        ).all()
+
+    def get_location_clusters(self, user_id: str):
+        return self.session.query(UserInteraction).filter(
+            UserInteraction.user_id == user_id,
+            UserInteraction.search_lat.isnot(None),
+            UserInteraction.search_lng.isnot(None)
+        ).all()
+
+    def get_interaction_count(self, user_id: str):
         return self.session.query(UserInteraction).filter(
             UserInteraction.user_id == user_id
-        ).order_by(UserInteraction.created_at.desc()).limit(50).all()
+        ).count()

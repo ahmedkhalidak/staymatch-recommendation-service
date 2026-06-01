@@ -1,10 +1,18 @@
 from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 from alembic import context
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+database_url = os.environ.get("DATABASE_URL")
+if database_url:
+    config.set_main_option("sqlalchemy.url", database_url)
 
 from app.database.models.base import Base
 target_metadata = Base.metadata

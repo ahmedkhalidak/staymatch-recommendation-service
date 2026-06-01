@@ -1,6 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional, Any
-from datetime import datetime
+from typing import Optional
 
 
 class UserProfileCreate(BaseModel):
@@ -11,18 +10,10 @@ class UserProfileCreate(BaseModel):
     birth_year: Optional[int] = None
     nationality: Optional[str] = None
     occupation: Optional[str] = None
-
-
-class UserProfileResponse(BaseModel):
-    id: str
-    external_user_id: str
-    full_name: Optional[str] = None
-    phone: Optional[str] = None
-    gender: Optional[str] = None
-    birth_year: Optional[int] = None
-    nationality: Optional[str] = None
-    occupation: Optional[str] = None
-    created_at: Optional[datetime] = None
+    college: Optional[str] = None
+    sleep_schedule: Optional[str] = None
+    smoking_status: Optional[str] = None
+    visitor_frequency: Optional[str] = None
 
 
 class SearchPreferenceCreate(BaseModel):
@@ -42,21 +33,6 @@ class SearchPreferenceCreate(BaseModel):
     shared_room: Optional[bool] = None
 
 
-class RecommendationResponse(BaseModel):
-    id: int
-    score: float
-    score_breakdown: Optional[dict] = None
-    rank: Optional[int] = None
-
-
-class PropertyRecommendationResponse(RecommendationResponse):
-    property_id: int
-
-
-class RoomRecommendationResponse(RecommendationResponse):
-    room_id: int
-
-
 class AnswerSubmit(BaseModel):
     question_id: int
     answer_value: str
@@ -73,21 +49,6 @@ class InteractionCreate(BaseModel):
     target_id: int
     action: str
     context: Optional[dict] = None
-
-
-class SyncStatusResponse(BaseModel):
-    last_sync: Optional[datetime] = None
-    tables: dict[str, Any] = {}
-
-
-class MatchComputeResponse(BaseModel):
-    seeker_user_id: str
-    matches: list[dict]
-
-
-class MatchResultResponse(BaseModel):
-    seeker_user_id: str
-    room_id: int
-    property_id: int
-    room_compatibility_score: float
-    created_at: Optional[datetime] = None
+    dwell_seconds: Optional[int] = None
+    search_lat: Optional[float] = None
+    search_lng: Optional[float] = None

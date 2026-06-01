@@ -7,16 +7,26 @@ class BudgetScorer(BaseScorer):
         if monthly_rent is None:
             return 0.5
 
-        max_budget = getattr(user, "max_budget", None) or getattr(context, "max_budget", None)
-        min_budget = getattr(user, "min_budget", None) or getattr(context, "min_budget", None)
+        max_budget = None
+        min_budget = None
+
+        if hasattr(user, "max_budget") and getattr(user, "max_budget") is not None:
+            max_budget = user.max_budget
+            min_budget = getattr(user, "min_budget", None)
+        elif context and isinstance(context, dict):
+            max_budget = context.get("max_budget")
+            min_budget = context.get("min_budget")
 
         if max_budget is None:
             return 0.5
 
-        if min_budget is not None and min_budget <= monthly_rent <= max_budget:
+        if min_budget is not None and monthly_rent < min_budget:
+            return max(0.0, monthly_rent / min_budget)
+
+        if min_budget is not None and monthly_rent <= max_budget:
             return 1.0
         if monthly_rent <= max_budget:
-            return 0.9 if min_budget is None else 1.0
+            return 0.9
         if monthly_rent <= max_budget * 1.2:
             return 0.7
 

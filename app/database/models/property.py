@@ -44,6 +44,7 @@ Index("idx_synced_properties_city", SyncedProperty.city)
 Index("idx_synced_properties_government", SyncedProperty.government)
 Index("idx_synced_properties_property_type", SyncedProperty.property_type)
 Index("idx_synced_properties_monthly_rent", SyncedProperty.monthly_rent)
+Index("idx_synced_properties_is_approved", SyncedProperty.is_approved)
 Index("idx_synced_properties_location", SyncedProperty.latitude, SyncedProperty.longitude)
 Index("idx_synced_properties_synced_at", SyncedProperty.synced_at)
 

@@ -1,22 +1,30 @@
-from fastapi import APIRouter, HTTPException
-from datetime import datetime
+from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import BackgroundTasks
+from sqlalchemy import func
 
-from app.repositories.property_repo import PropertyRepository, RoomRepository
-from app.repositories.property_repo import QuestionnaireRepository, SearchPreferenceRepository, RecommendationRepository
-from app.repositories.property_repo import UserRepository, InteractionRepository
-from app.services.scoring.budget_scorer import BudgetScorer
-from app.services.scoring.location_scorer import LocationScorer
-from app.services.scoring.amenity_scorer import AmenityScorer
-from app.services.scoring.tenant_scorer import TenantScorer
+from app.repositories.property_repo import (
+    PropertyRepository, RoomRepository, QuestionnaireRepository,
+    SearchPreferenceRepository, RecommendationRepository,
+    UserRepository, InteractionRepository, MatchingRepository
+)
 from app.services.recommendation.property_recommender import PropertyRecommender, RoomRecommender
 from app.services.sync.data_sync import DataSyncService
 from app.services.questionnaire_service import QuestionnaireService
 from app.schemas.recommendation import (
     UserProfileCreate, SearchPreferenceCreate, QuestionnaireAnswersSubmit,
-    InteractionCreate, MatchComputeResponse, MatchResultResponse
+    InteractionCreate
 )
+from app.core.security import verify_api_key
+from app.services.interaction_analyzer import InteractionAnalyzer, UserClassifier
+from app.services.matching.compatibility_engine import CompatibilityEngine
+from app.services.scoring.feedback_scorer import FeedbackScorer
+from app.repositories.weights_repo import WeightRepository
+from app.services.location_heatmap import LocationHeatmap
+from app.services.preferences_bridge import PreferencesBridge
+from app.database.session import get_session
+from app.database.models.recommendation import UserInteraction
+from app.database.models.property import SyncedProperty
 
-router = APIRouter()
 property_repo = PropertyRepository()
 room_repo = RoomRepository()
 user_repo = UserRepository()
@@ -24,9 +32,50 @@ questionnaire_repo = QuestionnaireRepository()
 pref_repo = SearchPreferenceRepository()
 rec_repo = RecommendationRepository()
 interaction_repo = InteractionRepository()
+match_repo = MatchingRepository()
+questionnaire_service = QuestionnaireService()
 property_recommender = PropertyRecommender()
 room_recommender = RoomRecommender()
-questionnaire_service = QuestionnaireService()
+interaction_analyzer = InteractionAnalyzer()
+user_classifier = UserClassifier()
+matching_engine = CompatibilityEngine()
+feedback_scorer = FeedbackScorer()
+weight_repo = WeightRepository()
+location_heatmap = LocationHeatmap()
+
+
+def _build_context(prefs, answers=None):
+    context = {"preferences": prefs}
+    if answers:
+        context["questionnaire_answers"] = [
+            {"question_id": a.question_id, "answer_value": a.answer_value} for a in answers
+        ]
+    if prefs:
+        context["max_budget"] = prefs.max_budget
+        context["min_budget"] = prefs.min_budget
+        context["preferred_city"] = prefs.preferred_city
+        context["preferred_government"] = prefs.preferred_government
+    return context
+
+
+def _recompute(user_id, background_tasks: BackgroundTasks = None):
+    if background_tasks:
+        background_tasks.add_task(_run_recommendations, user_id)
+
+
+def _run_recommendations(user_id: str):
+    properties = property_repo.get_all_approved()
+    rooms = room_repo.get_available()
+    user = user_repo.get_profile(user_id)
+    prefs = pref_repo.get(user_id)
+    answers = questionnaire_repo.get_answers(user_id)
+    context = _build_context(prefs, answers)
+
+    scored_props = property_recommender.recommend(user or prefs, properties, context)
+    rec_repo.save_property_recommendations(user_id, scored_props)
+
+    scored_rooms = room_recommender.recommend(user or prefs, rooms, context)
+    rec_repo.save_room_recommendations(user_id, scored_rooms)
 
 
 # --- SYNC ---
@@ -47,20 +96,52 @@ def sync_status():
 
 @router.get("/recommend/properties/{user_id}")
 def get_property_recommendations(user_id: str):
-    properties = property_repo.get_all_approved()
     user = user_repo.get_profile(user_id)
     prefs = pref_repo.get(user_id)
-    answers = questionnaire_repo.get_answers(user_id)
 
-    context = {
-        "preferences": prefs,
-        "questionnaire_answers": [{"question_id": a.question_id, "answer_value": a.answer_value} for a in (answers or [])],
-    }
-    if prefs:
-        context["max_budget"] = prefs.max_budget
-        context["min_budget"] = prefs.min_budget
-        context["preferred_city"] = prefs.preferred_city
-        context["preferred_government"] = prefs.preferred_government
+    if not user and not prefs:
+        session = get_session()
+        popular = (
+            session.query(
+                UserInteraction.target_id,
+                func.count(UserInteraction.id).label("view_count")
+            )
+            .filter(
+                UserInteraction.target_type == "property",
+                UserInteraction.action.in_(["viewed", "liked", "saved", "contacted"])
+            )
+            .group_by(UserInteraction.target_id)
+            .order_by(func.count(UserInteraction.id).desc())
+            .limit(20)
+            .all()
+        )
+        session.close()
+
+        if popular:
+            pop_ids = [p.target_id for p in popular]
+            view_counts = {p.target_id: p.view_count for p in popular}
+            all_props = property_repo.get_all_approved()
+            prop_map = {p.id: p for p in all_props}
+            max_count = max(view_counts.values()) if view_counts else 1
+            recommendations = []
+            for pid in pop_ids:
+                prop = prop_map.get(pid)
+                if prop:
+                    popularity_score = view_counts.get(pid, 0) / max_count
+                    recommendations.append({
+                        "property_id": pid,
+                        "score": popularity_score,
+                        "score_breakdown": {"popularity": popularity_score},
+                        "rank": len(recommendations),
+                    })
+            return {
+                "user_id": user_id,
+                "recommendations": recommendations,
+            }
+
+    properties = property_repo.get_all_approved()
+    answers = questionnaire_repo.get_answers(user_id)
+    context = _build_context(prefs, answers)
 
     scored = property_recommender.recommend(user or prefs, properties, context)
     rec_repo.save_property_recommendations(user_id, scored)
@@ -79,13 +160,7 @@ def get_room_recommendations(user_id: str):
     rooms = room_repo.get_available()
     user = user_repo.get_profile(user_id)
     prefs = pref_repo.get(user_id)
-
-    context = {"preferences": prefs}
-    if prefs:
-        context["max_budget"] = prefs.max_budget
-        context["min_budget"] = prefs.min_budget
-        context["preferred_city"] = prefs.preferred_city
-        context["preferred_government"] = prefs.preferred_government
+    context = _build_context(prefs)
 
     scored = room_recommender.recommend(user or prefs, rooms, context)
     rec_repo.save_room_recommendations(user_id, scored)
@@ -100,21 +175,21 @@ def get_room_recommendations(user_id: str):
 
 
 @router.post("/recommend/compute/{user_id}")
-def compute_recommendations(user_id: str):
-    return get_property_recommendations(user_id)
+def compute_recommendations(user_id: str, background_tasks: BackgroundTasks):
+    _recompute(user_id, background_tasks)
+    return {"status": "ok", "message": f"Recomputing recommendations for {user_id}"}
 
 
 # --- MATCHING ---
 
 @router.post("/match/compute/{user_id}")
 def compute_matches(user_id: str):
-    return {"status": "computed", "seeker_user_id": user_id, "matches": []}
+    result = matching_engine.compute_for_user(user_id)
+    return result
 
 
 @router.get("/match/results/{user_id}")
 def get_match_results(user_id: str):
-    from app.repositories.property_repo import MatchingRepository
-    match_repo = MatchingRepository()
     matches = match_repo.get_matches(user_id)
     return {
         "seeker_user_id": user_id,
@@ -134,7 +209,7 @@ def get_match_results(user_id: str):
 
 @router.post("/users/profile")
 def create_or_update_profile(data: UserProfileCreate):
-    profile = user_repo.upsert_profile(data.user_id, data.model_dump(exclude={"user_id"}))
+    user_repo.upsert_profile(data.user_id, data.model_dump(exclude={"user_id"}))
     return {"status": "ok", "user_id": data.user_id}
 
 
@@ -158,7 +233,7 @@ def get_profile(user_id: str):
 
 @router.post("/users/preferences")
 def save_preferences(data: SearchPreferenceCreate):
-    pref = pref_repo.upsert(data.user_id, data.model_dump(exclude={"user_id"}))
+    pref_repo.upsert(data.user_id, data.model_dump(exclude={"user_id"}))
     return {"status": "ok", "user_id": data.user_id}
 
 
@@ -193,10 +268,11 @@ def list_questions():
 
 
 @router.post("/questionnaire/answers/{user_id}")
-def submit_answers(user_id: str, data: QuestionnaireAnswersSubmit):
+def submit_answers(user_id: str, data: QuestionnaireAnswersSubmit, background_tasks: BackgroundTasks):
     answers = [a.model_dump() for a in data.answers]
     questionnaire_repo.save_answers(user_id, answers)
-    return {"status": "ok", "user_id": user_id, "answers_count": len(answers)}
+    _recompute(user_id, background_tasks)
+    return {"status": "ok", "user_id": user_id, "answers_count": len(answers), "recompute": "queued"}
 
 
 @router.get("/questionnaire/answers/{user_id}")
@@ -241,3 +317,78 @@ def get_interactions(user_id: str):
             for i in interactions
         ]
     }
+
+
+# --- INTERACTION ANALYSIS & USER CLASSIFICATION ---
+
+@router.post("/analyze/{user_id}")
+def analyze_interactions(user_id: str):
+    result = interaction_analyzer.analyze(user_id)
+    return result
+
+
+@router.get("/classify/{user_id}")
+def classify_user(user_id: str):
+    preferences = pref_repo.get(user_id)
+    prefs_dict = {
+        "preferred_city": preferences.preferred_city,
+        "preferred_government": preferences.preferred_government,
+        "preferred_property_type": preferences.preferred_property_type,
+        "min_budget": preferences.min_budget,
+        "max_budget": preferences.max_budget,
+        "furnished": preferences.furnished,
+    } if preferences else {}
+    classification = user_classifier.classify(user_id, prefs_dict)
+    return {"user_id": user_id, "classification": classification}
+
+
+@router.post("/interactions/feedback/{user_id}")
+def learn_from_interactions(user_id: str):
+    feedback_scorer.learn_from_interaction(user_id, "", 0, "viewed")
+    return {"status": "ok", "user_id": user_id}
+
+
+@router.get("/heatmap/{user_id}")
+def get_location_heatmap(user_id: str):
+    result = location_heatmap.analyze(user_id)
+    return result
+
+
+@router.post("/admin/sync-preferences")
+def sync_chatbot_preferences():
+    bridge = PreferencesBridge()
+    result = bridge.sync_all()
+    return {"status": "ok", "synced": result}
+
+
+# --- WEIGHTS (A/B Testing) ---
+
+@router.get("/admin/weights")
+def get_all_weights():
+    weights = weight_repo.get_all_weights()
+    return {
+        "weights": [
+            {
+                "id": w.id,
+                "key": w.weight_key,
+                "value": w.weight_value,
+                "group": w.weight_group,
+                "description": w.description,
+            }
+            for w in weights
+        ]
+    }
+
+
+@router.put("/admin/weights/{group}/{key}")
+def update_weight(group: str, key: str, value: float = Query(...)):
+    updated = weight_repo.update_weight(key, group, value)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Weight not found")
+    return {"status": "ok", "key": key, "group": group, "new_value": value}
+
+
+@router.get("/admin/weights/{group}")
+def get_group_weights(group: str):
+    weights = weight_repo.get_weights(group)
+    return {"group": group, "weights": weights}
