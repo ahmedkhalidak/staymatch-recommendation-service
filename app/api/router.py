@@ -87,6 +87,14 @@ def trigger_sync():
     return {"status": "ok", "results": results}
 
 
+@router.post("/sync/users")
+def sync_users():
+    service = DataSyncService()
+    result = service.sync_users()
+    pref_result = service.sync_user_preferences()
+    return {"status": "ok", "users": result, "preferences": pref_result}
+
+
 @router.get("/sync/status")
 def sync_status():
     return {"status": "ok", "message": "Sync status endpoint"}
@@ -94,8 +102,62 @@ def sync_status():
 
 # --- RECOMMENDATIONS ---
 
+def _apply_filters(scored, filters):
+    city = filters.get("city")
+    min_budget = filters.get("min_budget")
+    max_budget = filters.get("max_budget")
+    property_type = filters.get("property_type")
+    limit = filters.get("limit")
+
+    filtered = []
+    for item in scored:
+        prop = item[0]
+        if city and getattr(prop, "city", "").lower() != city.lower():
+            continue
+        if min_budget is not None and (getattr(prop, "monthly_rent", 0) or 0) < min_budget:
+            continue
+        if max_budget is not None and (getattr(prop, "monthly_rent", 0) or 0) > max_budget:
+            continue
+        if property_type:
+            type_map = {"full": 0, "shared": 1, "room": 1}
+            mapped = type_map.get(property_type.lower())
+            if mapped is not None and getattr(prop, "property_type", None) != mapped:
+                continue
+        filtered.append(item)
+
+    if limit:
+        filtered = filtered[:limit]
+
+    return filtered
+
+
+def _apply_room_filters(scored, filters):
+    city = filters.get("city")
+    limit = filters.get("limit")
+
+    filtered = []
+    for item in scored:
+        room = item[0]
+        prop = item[3]
+        if city and prop is not None and getattr(prop, "city", "").lower() != city.lower():
+            continue
+        filtered.append(item)
+
+    if limit:
+        filtered = filtered[:limit]
+
+    return filtered
+
+
 @router.get("/recommend/properties/{user_id}")
-def get_property_recommendations(user_id: str):
+def get_property_recommendations(
+    user_id: str,
+    city: str = Query(None),
+    min_budget: float = Query(None),
+    max_budget: float = Query(None),
+    property_type: str = Query(None),
+    limit: int = Query(None),
+):
     user = user_repo.get_profile(user_id)
     prefs = pref_repo.get(user_id)
 
@@ -143,7 +205,27 @@ def get_property_recommendations(user_id: str):
     answers = questionnaire_repo.get_answers(user_id)
     context = _build_context(prefs, answers)
 
+    filter_overrides = {}
+    if city:
+        filter_overrides["preferred_city"] = city
+    if min_budget is not None:
+        filter_overrides["min_budget"] = min_budget
+    if max_budget is not None:
+        filter_overrides["max_budget"] = max_budget
+    if property_type:
+        filter_overrides["preferred_property_type"] = property_type
+
+    if filter_overrides:
+        context.update(filter_overrides)
+
     scored = property_recommender.recommend(user or prefs, properties, context)
+    scored = _apply_filters(scored, {
+        "city": city,
+        "min_budget": min_budget,
+        "max_budget": max_budget,
+        "property_type": property_type,
+        "limit": limit,
+    })
     rec_repo.save_property_recommendations(user_id, scored)
 
     return {
@@ -156,13 +238,21 @@ def get_property_recommendations(user_id: str):
 
 
 @router.get("/recommend/rooms/{user_id}")
-def get_room_recommendations(user_id: str):
+def get_room_recommendations(
+    user_id: str,
+    city: str = Query(None),
+    limit: int = Query(None),
+):
     rooms = room_repo.get_available()
     user = user_repo.get_profile(user_id)
     prefs = pref_repo.get(user_id)
     context = _build_context(prefs)
 
+    if city:
+        context["preferred_city"] = city
+
     scored = room_recommender.recommend(user or prefs, rooms, context)
+    scored = _apply_room_filters(scored, {"city": city, "limit": limit})
     rec_repo.save_room_recommendations(user_id, scored)
 
     return {

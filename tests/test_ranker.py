@@ -3,7 +3,7 @@ import pytest
 from app.services.ranking.ranker import Ranker
 from app.services.recommendation.property_recommender import PropertyRecommender, RoomRecommender
 from app.utils.weights import PROPERTY_WEIGHTS, ROOM_WEIGHTS
-from conftest import MockUser, MockProperty, MockRoom, MockAllowedTenant, MockAmenity
+from tests.conftest import MockUser, MockProperty, MockRoom, MockAllowedTenant, MockAmenity
 
 class TestRanker:
     def test_weighted_sum_perfect(self):

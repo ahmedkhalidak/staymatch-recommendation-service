@@ -1,7 +1,7 @@
 """Unit tests for LocationScorer."""
 import pytest
 from app.services.scoring.location_scorer import LocationScorer
-from conftest import MockUser, MockProperty
+from tests.conftest import MockUser, MockProperty
 
 scorer = LocationScorer()
 
