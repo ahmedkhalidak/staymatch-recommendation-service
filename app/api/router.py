@@ -25,6 +25,8 @@ from app.database.session import get_session
 from app.database.models.recommendation import UserInteraction
 from app.database.models.property import SyncedProperty
 
+router = APIRouter()
+
 property_repo = PropertyRepository()
 room_repo = RoomRepository()
 user_repo = UserRepository()

@@ -27,29 +27,20 @@ class PreferencesBridge:
         synced = 0
         for row in rows:
             data = {"user_id": row["user_id"]}
-            if row.get("min_budget"):
-                data["min_budget"] = row["min_budget"]
-            if row.get("max_budget"):
-                data["max_budget"] = row["max_budget"]
-            if row.get("preferred_location"):
-                data["preferred_city"] = row["preferred_location"]
-                data["preferred_government"] = row["preferred_location"]
-            if row.get("tenant_type"):
-                data["tenant_type"] = row["tenant_type"]
-            if row.get("gender"):
-                data["gender_preference"] = row["gender"]
-            if row.get("furnished"):
-                data["furnished"] = row["furnished"]
-            if row.get("wifi"):
-                data["wifi"] = row["wifi"]
-            if row.get("air_conditioning"):
-                data["air_conditioning"] = row["air_conditioning"]
-            if row.get("balcony"):
-                data["balcony"] = row["balcony"]
-            if row.get("private_bathroom"):
-                data["private_bathroom"] = row["private_bathroom"]
-            if row.get("shared_room"):
-                data["shared_room"] = row["shared_room"]
+            data["min_budget"] = row.get("min_budget")
+            data["max_budget"] = row.get("max_budget")
+            data["tenant_type"] = row.get("tenant_type")
+            data["gender_preference"] = row.get("gender")
+            data["furnished"] = row.get("furnished")
+            data["wifi"] = row.get("wifi")
+            data["air_conditioning"] = row.get("air_conditioning")
+            data["balcony"] = row.get("balcony")
+            data["private_bathroom"] = row.get("private_bathroom")
+            data["shared_room"] = row.get("shared_room")
+
+            preferred_location = row.get("preferred_location")
+            data["preferred_city"] = preferred_location
+            data["preferred_government"] = preferred_location
 
             self.session.execute(
                 text("""
