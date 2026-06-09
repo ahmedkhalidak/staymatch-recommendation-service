@@ -4,10 +4,10 @@
 
 ```bash
 # Run all tests (no real DB needed — all mocks)
-PYTHONPATH=. pytest tests/ -v
+PYTHONPATH=. python -m pytest tests/ -v
 
 # Run a single test file
-PYTHONPATH=. pytest tests/test_budget_scorer.py -v
+PYTHONPATH=. python -m pytest tests/test_budget_scorer.py -v
 
 # Start dev server
 uvicorn app.main:app --reload --port 8000
@@ -20,9 +20,21 @@ python scripts/seed_questionnaire.py
 
 # Manual MSSQL sync
 python scripts/sync_data.py
+
+# Trigger full sync via API (properties + rooms + users)
+curl -X POST http://localhost:8000/sync/refresh -H "X-API-Key: your-key"
+
+# Sync only users from MSSQL
+curl -X POST http://localhost:8000/sync/users -H "X-API-Key: your-key"
+
+# Create/update a user profile
+curl -X POST http://localhost:8000/users/profile \
+  -H "X-API-Key: your-key" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"guid-...","full_name":"John","gender":"male"}'
 ```
 
-`PYTHONPATH=.` is required before `pytest` and any `python scripts/` invocation.
+`PYTHONPATH=.` is required before `pytest` (`python -m pytest` to avoid import issues) and any `python scripts/` invocation.
 
 ## Architecture
 
@@ -30,7 +42,13 @@ python scripts/sync_data.py
 - **Entrypoint:** `app/main.py` — creates FastAPI app, includes `health_router` and `main_router`.
 - **Config:** `app/config.py` uses `pydantic-settings`, reads from `.env`. Settings are loaded on-the-fly (no shared singleton).
 - **All endpoints** require `X-API-Key` header (checked by `app/core/security.py:verify_api_key`). Set `API_KEY` env var; if empty, auth is skipped.
-- **Two databases:** PostgreSQL (Neon) for our data, MSSQL for sync (FreeTDS/ODBC 17 via `pyodbc`). MSSQL engine created in `app/database/session.py:get_mssql_engine()`.
+- **Two databases:** PostgreSQL (Neon) for our data, MSSQL for sync (FreeTDS/ODBC 17 via `pyodbc`). MSSQL engine created in `app/database/session.py:get_mssql_engine()`. All sync is read-only from MSSQL — never writes to it.
+
+## API Endpoints
+
+- **`GET /recommend/properties/{user_id}`** supports filter query params: `?city=&min_budget=&max_budget=&property_type=full|shared&limit=`. These filter the already-scored (potentially cached) results without recomputation.
+- **`GET /recommend/rooms/{user_id}`** supports `?city=&limit=`.
+- **`POST /sync/users`** triggers MSSQL user sync — reads `AspNetUsers`/`Users` table (read-only), maps to `user_profiles` in PostgreSQL. Also syncs `UserPreferences` if the table exists.
 
 ## Scoring Pipeline
 
@@ -61,6 +79,7 @@ python scripts/sync_data.py
 - **Questionnaire answers** trigger background recomputation of both property and room recommendations.
 - **Interactions** logged via `POST /interactions`. Analyzer (`app/services/interaction_analyzer.py`) infers preferences from dwell time, saves, likes.
 - **Weight updates** take effect immediately (next recommendation) — no deploy needed.
+- **User sync** reads from MSSQL `AspNetUsers`/`Users` table (read-only) and upserts into our `user_profiles` table. Also syncs `UserPreferences` if it exists. All sync is read-only from MSSQL — never writes to it.
 
 ## Deployment
 

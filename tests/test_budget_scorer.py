@@ -1,7 +1,7 @@
 """Unit tests for BudgetScorer — covers all rent scenarios."""
 import pytest
 from app.services.scoring.budget_scorer import BudgetScorer
-from conftest import MockUser, MockProperty
+from tests.conftest import MockUser, MockProperty
 
 scorer = BudgetScorer()
 

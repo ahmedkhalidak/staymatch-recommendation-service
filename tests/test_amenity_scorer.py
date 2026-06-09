@@ -1,7 +1,7 @@
 """Unit tests for AmenityScorer."""
 import pytest
 from app.services.scoring.amenity_scorer import AmenityScorer
-from conftest import MockUser, MockProperty, MockAmenity
+from tests.conftest import MockUser, MockProperty, MockAmenity
 
 scorer = AmenityScorer()
 
