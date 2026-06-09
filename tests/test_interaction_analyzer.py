@@ -50,10 +50,10 @@ class TestUserClassifier:
 
     def test_high_save_ratio(self):
         """High save ratio → decisive_buyer segment"""
+        from tests.conftest import MockInteraction
         classifier = UserClassifier()
         mock_interactions = []
         for i in range(7):
-            from conftest import MockInteraction
             mock_interactions.append(MockInteraction(action="saved", dwell_seconds=5))
         for i in range(3):
             mock_interactions.append(MockInteraction(action="viewed", dwell_seconds=2))
@@ -64,10 +64,10 @@ class TestUserClassifier:
 
     def test_high_dwell(self):
         """High dwell time → careful_evaluator"""
+        from tests.conftest import MockInteraction
         classifier = UserClassifier()
         mock_interactions = []
         for i in range(5):
-            from conftest import MockInteraction
             mock_interactions.append(MockInteraction(action="viewed", dwell_seconds=45))
         for i in range(5):
             mock_interactions.append(MockInteraction(action="viewed", dwell_seconds=2))

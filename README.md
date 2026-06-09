@@ -1,8 +1,7 @@
 # StayMatch Recommendation Service
 
-> **محرك التوصيات والمطابقة الذكي** — يعمل على PostgreSQL (Neon) ويستهلكه ASP.NET Backend
 
----
+
 
 ## 📋 What This Service Does
 

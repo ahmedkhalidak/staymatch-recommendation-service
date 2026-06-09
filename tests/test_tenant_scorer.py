@@ -1,7 +1,7 @@
 """Unit tests for TenantScorer — strict gender filtering + occupation."""
 import pytest
 from app.services.scoring.tenant_scorer import TenantScorer
-from conftest import MockUser, MockProperty, MockAllowedTenant, MockAmenity
+from tests.conftest import MockUser, MockProperty, MockAllowedTenant, MockAmenity
 
 scorer = TenantScorer()
 
