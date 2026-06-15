@@ -196,7 +196,7 @@ async def compute_shared_properties_match(current_user: CurrentUser = Depends(ge
     }
 })
 def list_questions():
-    return questionnaire_service.get_all_questions()
+    return {"questions": questionnaire_service.get_all_questions()}
 
 
 @router.post("/questionnaire/answers", tags=["Questionnaire"], summary="Submit questionnaire answers for a user", description="Save questionnaire answers submitted by a user. Accepts direct map of machine_key to answer_scale (no wrapper object). Returns status confirmation and answers count.", response_model=QuestionnaireAnswersSubmitResponse, responses={
@@ -429,7 +429,7 @@ async def get_profile_questionnaire(current_user: CurrentUser = Depends(get_curr
     }
 })
 def get_all_questions_admin():
-    return questionnaire_service.get_all_questions()
+    return {"questions": questionnaire_service.get_all_questions()}
 
 
 @router.get("/admin/questionnaire/users", tags=["Admin"], summary="Get all users with questionnaire answers", description="Return all users that currently have questionnaire answers with their answer counts.", response_model=AdminUsersListResponse, responses={

@@ -1,8 +1,6 @@
 # StayMatch Recommendation Service
 
 
-
-
 ## 📋 What This Service Does
 
 This is a **standalone AI-powered recommendation and roommate matching engine** that:
