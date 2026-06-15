@@ -1,54 +1,28 @@
-from pydantic import BaseModel
-from typing import Optional
-
-
-class UserProfileCreate(BaseModel):
-    user_id: str
-    full_name: Optional[str] = None
-    phone: Optional[str] = None
-    gender: Optional[str] = None
-    birth_year: Optional[int] = None
-    nationality: Optional[str] = None
-    occupation: Optional[str] = None
-    college: Optional[str] = None
-    sleep_schedule: Optional[str] = None
-    smoking_status: Optional[str] = None
-    visitor_frequency: Optional[str] = None
-
-
-class SearchPreferenceCreate(BaseModel):
-    user_id: str
-    min_budget: Optional[int] = None
-    max_budget: Optional[int] = None
-    preferred_city: Optional[str] = None
-    preferred_government: Optional[str] = None
-    preferred_property_type: Optional[str] = None
-    furnished: Optional[bool] = None
-    wifi: Optional[bool] = None
-    air_conditioning: Optional[bool] = None
-    balcony: Optional[bool] = None
-    private_bathroom: Optional[bool] = None
-    tenant_type: Optional[str] = None
-    gender_preference: Optional[str] = None
-    shared_room: Optional[bool] = None
-
-
-class AnswerSubmit(BaseModel):
-    question_id: int
-    answer_value: str
-    answer_scale: Optional[int] = None
+from pydantic import BaseModel, Field, field_validator
+from typing import Optional, Dict
 
 
 class QuestionnaireAnswersSubmit(BaseModel):
-    answers: list[AnswerSubmit]
-
-
-class InteractionCreate(BaseModel):
-    user_id: str
-    target_type: str
-    target_id: int
-    action: str
-    context: Optional[dict] = None
-    dwell_seconds: Optional[int] = None
-    search_lat: Optional[float] = None
-    search_lng: Optional[float] = None
+    """Direct map of machine_key to answer_scale value (no wrapper object)"""
+    age_group: Optional[int] = Field(None, description="Age group selection (1-4)")
+    occupation_status: Optional[int] = Field(None, description="Occupation status (1-4)")
+    study_or_work_field: Optional[int] = Field(None, description="Study or work field (1-5)")
+    busiest_time: Optional[int] = Field(None, description="Busiest time of day (1-5)")
+    sleep_time: Optional[int] = Field(None, description="Sleep time (1-4)")
+    first_activity_home: Optional[int] = Field(None, description="First activity when home (1-4)")
+    mess_tolerance: Optional[int] = Field(None, description="Mess tolerance (1-4)")
+    free_day_style: Optional[int] = Field(None, description="Free day style (1-4)")
+    group_activity_preference: Optional[int] = Field(None, description="Group activity preference (1-4)")
+    study_environment: Optional[int] = Field(None, description="Study environment preference (1-4)")
+    smoking_preference: Optional[int] = Field(None, description="Smoking preference (1-4)")
+    biggest_shared_living_issue: Optional[int] = Field(None, description="Biggest shared living issue (1-4)")
+    flexibility_level: Optional[int] = Field(None, description="Flexibility level (1-4)")
+    
+    @field_validator('*')
+    @classmethod
+    def validate_answer_scale(cls, v):
+        """Validate that answer scale is a positive integer."""
+        if v is not None:
+            if not isinstance(v, int) or v < 1:
+                raise ValueError("Answer scale must be a positive integer (>= 1)")
+        return v

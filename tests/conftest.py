@@ -13,7 +13,7 @@ class MockProperty:
             setattr(self, k, v)
         if not hasattr(self, "amenities"): self.amenities = None
         if not hasattr(self, "allowed_tenants"): self.allowed_tenants = None
-        if not hasattr(self, "created_at"): self.created_at = datetime.utcnow()
+        if not hasattr(self, "created_at"): self.created_at = datetime.now()
 
 class MockRoom:
     def __init__(self, **kwargs):

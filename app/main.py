@@ -4,8 +4,7 @@ import logging
 
 from app.database.session import test_connection
 from app.api.health import router as health_router
-from app.api.router import router as main_router
-from app.services.preferences_bridge import PreferencesBridge
+from app.api.router import router as main_router, tags_metadata
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("staymatch")
@@ -17,9 +16,6 @@ async def lifespan(app: FastAPI):
     db_ok = test_connection()
     if db_ok:
         logger.info("Database connection verified")
-        bridge = PreferencesBridge()
-        result = bridge.sync_all()
-        logger.info("Preferences bridge synced: %s", result)
     else:
         logger.warning("Database connection failed on startup — check DATABASE_URL")
     yield
@@ -28,9 +24,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="StayMatch Recommendation Service",
-    description="Property recommendation, room recommendation, and roommate matching engine",
-    version="1.0.0",
+    description="Roommate matching and questionnaire management",
+    version="2.0.0",
     lifespan=lifespan,
+    openapi_tags=tags_metadata,
 )
 
 app.include_router(health_router)

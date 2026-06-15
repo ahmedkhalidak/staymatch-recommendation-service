@@ -1,9 +1,11 @@
 """Unit tests for Ranker + PropertyRecommender + RoomRecommender."""
 import pytest
+from unittest.mock import patch
 from app.services.ranking.ranker import Ranker
 from app.services.recommendation.property_recommender import PropertyRecommender, RoomRecommender
 from app.utils.weights import PROPERTY_WEIGHTS, ROOM_WEIGHTS
 from tests.conftest import MockUser, MockProperty, MockRoom, MockAllowedTenant, MockAmenity
+
 
 class TestRanker:
     def test_weighted_sum_perfect(self):
@@ -30,9 +32,14 @@ class TestRanker:
         ranker = Ranker(PROPERTY_WEIGHTS)
         assert ranker.weighted_sum({}) == 0.0
 
+
 class TestPropertyRecommender:
-    def test_property_ranking_order(self, sample_properties, male_user):
+    @patch("app.services.recommendation.property_recommender.get_session")
+    @patch("app.repositories.weights_repo.get_session")
+    def test_property_ranking_order(self, mock_wr, mock_sesh, sample_properties, male_user):
         """Higher score properties come first"""
+        mock_sesh.return_value.query.return_value.filter.return_value.order_by.return_value.all.return_value = []
+        mock_wr.return_value.query.return_value.filter.return_value.all.return_value = []
         rec = PropertyRecommender()
         ctx = {"max_budget": 6000, "min_budget": 3000,
                "preferred_city": "Cairo", "preferred_government": "Cairo"}
@@ -41,8 +48,12 @@ class TestPropertyRecommender:
         scores = [s for _, s, _ in scored]
         assert scores == sorted(scores, reverse=True)
 
-    def test_property_breakdown_jsonb(self, sample_properties, male_user):
+    @patch("app.services.recommendation.property_recommender.get_session")
+    @patch("app.repositories.weights_repo.get_session")
+    def test_property_breakdown_jsonb(self, mock_wr, mock_sesh, sample_properties, male_user):
         """Score breakdown should have correct keys"""
+        mock_sesh.return_value.query.return_value.filter.return_value.order_by.return_value.all.return_value = []
+        mock_wr.return_value.query.return_value.filter.return_value.all.return_value = []
         rec = PropertyRecommender()
         ctx = {"max_budget": 6000, "min_budget": 3000,
                "preferred_city": "Cairo", "preferred_government": "Cairo"}
@@ -51,32 +62,43 @@ class TestPropertyRecommender:
         for key in ["budget", "location", "amenities", "tenant", "furnished", "property_type", "recency"]:
             assert key in breakdown
 
+
 class TestRoomRecommender:
-    def test_room_diversity_rule(self, sample_rooms):
+    @patch("app.services.recommendation.property_recommender.get_session")
+    @patch("app.repositories.weights_repo.get_session")
+    def test_room_diversity_rule(self, mock_wr, mock_sesh, sample_rooms):
         """No more than 2 results from same property"""
+        mock_sesh.return_value.query.return_value.filter.return_value.order_by.return_value.all.return_value = []
+        mock_wr.return_value.query.return_value.filter.return_value.all.return_value = []
         rec = RoomRecommender()
         user = MockUser(gender="male", occupation="student", min_budget=1000, max_budget=5000)
-        # Add extra room from property_id=1 to test diversity
         extra_room = MockRoom(id=4, property_id=1, month_rent=1800, capacity=3,
                                capacity_available=1, furnished=False, shared_bathroom=True)
         rooms = sample_rooms + [extra_room]
         scored = rec.recommend(user, rooms, {})
-        # Count results per property
         from collections import Counter
         prop_counts = Counter(r[3].id if r[3] else None for r in scored)
         for pid, count in prop_counts.items():
             if pid is not None:
                 assert count <= 2
 
-    def test_room_capacity_scoring(self):
+    @patch("app.services.recommendation.property_recommender.get_session")
+    @patch("app.repositories.weights_repo.get_session")
+    def test_room_capacity_scoring(self, mock_wr, mock_sesh):
         """Rooms with available capacity score higher"""
+        mock_sesh.return_value.query.return_value.filter.return_value.order_by.return_value.all.return_value = []
+        mock_wr.return_value.query.return_value.filter.return_value.all.return_value = []
         rec = RoomRecommender()
         room_full = MockRoom(id=1, property_id=1, month_rent=2000, capacity=2, capacity_available=0)
         room_avail = MockRoom(id=2, property_id=1, month_rent=2000, capacity=2, capacity_available=2)
         assert rec._capacity_score(room_avail) > rec._capacity_score(room_full)
 
-    def test_room_ensuite_premium(self):
+    @patch("app.services.recommendation.property_recommender.get_session")
+    @patch("app.repositories.weights_repo.get_session")
+    def test_room_ensuite_premium(self, mock_wr, mock_sesh):
         """Ensuite bathroom rooms score higher than shared"""
+        mock_sesh.return_value.query.return_value.filter.return_value.order_by.return_value.all.return_value = []
+        mock_wr.return_value.query.return_value.filter.return_value.all.return_value = []
         rec = RoomRecommender()
         room_ensuite = MockRoom(id=1, property_id=1, ensuite_bathroom=True, shared_bathroom=False)
         room_shared = MockRoom(id=2, property_id=1, ensuite_bathroom=False, shared_bathroom=True)

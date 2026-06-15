@@ -1,8 +1,9 @@
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import OperationalError
 import time
 import logging
+from contextlib import contextmanager
 
 from app.config import Settings
 
@@ -19,6 +20,7 @@ def get_engine():
         _engine = create_engine(
             settings.database_url,
             pool_pre_ping=True,
+            pool_recycle=300,
             pool_size=5,
             max_overflow=10,
             echo=False
@@ -94,3 +96,17 @@ def test_connection():
         return True
     except Exception:
         return False
+
+
+@contextmanager
+def session_scope():
+    """Provide a transactional scope around a series of operations."""
+    session = get_session()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()

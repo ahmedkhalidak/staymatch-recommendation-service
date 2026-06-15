@@ -13,11 +13,19 @@ class Settings(BaseSettings):
     db_user: str = ""
     db_password: str = ""
 
+    # .NET Property API configuration
+    PROPERTY_API_BASE_URL: str = ""
+    PROPERTY_API_TOKEN: str = ""  # JWT token for API authentication
+
     sync_interval_minutes: int = 5
-    api_key: str = ""
+    API_KEY: str = ""
     scoring_weights_override: Optional[str] = None
     log_level: str = "INFO"
 
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+
+
+# Singleton instance
+settings = Settings()

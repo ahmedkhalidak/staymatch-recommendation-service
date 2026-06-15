@@ -35,7 +35,7 @@ class QuestionnaireCategory(Base):
     name_en = Column(Text, nullable=False)
     sort_order = Column(Integer, default=0)
 
-    questions = relationship("QuestionnaireQuestion", back_populates="category")
+    questions = relationship("QuestionnaireQuestion", back_populates="category", order_by="QuestionnaireQuestion.sort_order")
 
 
 class QuestionnaireQuestion(Base):

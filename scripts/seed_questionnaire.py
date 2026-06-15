@@ -1,179 +1,35 @@
 #!/usr/bin/env python3
-"""
-16 questions: personality + lifestyle + social + financial + career/study.
-"""
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.database.session import get_session
 from app.database.models.user import QuestionnaireCategory, QuestionnaireQuestion
 
-
 CATEGORIES = [
-    {"name_ar": "الشخصية والدراسة/العمل", "name_en": "Personality & Career", "sort_order": 1},
-    {"name_ar": "نمط الحياة", "name_en": "Lifestyle & Habits", "sort_order": 2},
-    {"name_ar": "التواصل والمعيشة", "name_en": "Social & Cohabitation", "sort_order": 3},
-    {"name_ar": "المالية والنظافة", "name_en": "Finance & Cleanliness", "sort_order": 4},
+    {"name_ar": "البيانات الشخصية", "name_en": "Personal Background", "sort_order": 1},
+    {"name_ar": "الروتين اليومي", "name_en": "Daily Schedule", "sort_order": 2},
+    {"name_ar": "نمط الحياة", "name_en": "Lifestyle", "sort_order": 3},
+    {"name_ar": "التوافق الاجتماعي", "name_en": "Social Compatibility", "sort_order": 4},
 ]
 
 QUESTIONS = [
-    # --- 1. Career/Study ---
-    {
-        "category": 1,
-        "question_ar": "إيه وضعك دلوقتي؟",
-        "question_en": "What is your current status?",
-        "question_type": "multiple_choice",
-        "options_ar": ["طالب", "موظف", "عمل حر/فري لانس", "ريادي أعمال", "باحث عن عمل"],
-        "options_en": ["Student", "Employee", "Freelancer", "Entrepreneur", "Job Seeker"],
-        "weight": 1.0, "sort_order": 1,
-    },
-    {
-        "category": 1,
-        "question_ar": "لو طالب، إيه كليتك أو تخصصك؟",
-        "question_en": "If student, what is your college or major?",
-        "question_type": "multiple_choice",
-        "options_ar": ["هندسة", "طب", "صيدلة", "علوم/حاسبات", "حقوق", "تجارة", "آداب", "تربية", "فنون", "أخرى"],
-        "options_en": ["Engineering", "Medicine", "Pharmacy", "Sciences/CS", "Law", "Business", "Arts", "Education", "Fine Arts", "Other"],
-        "weight": 0.7, "sort_order": 2,
-    },
-    {
-        "category": 1,
-        "question_ar": "كيف تصف شخصيتك؟",
-        "question_en": "How would you describe your personality?",
-        "question_type": "multiple_choice",
-        "options_ar": ["منظم جدًا — بحب النظام والمواعيد", "اجتماعي — بحب الناس والجو", "هادئ — بحب العزلة والهدوء", "مرن — ماشي مع التيار"],
-        "options_en": ["Organized — love structure and punctuality", "Social — love people and energy", "Quiet — prefer solitude and calm", "Flexible — go with the flow"],
-        "weight": 0.9, "sort_order": 3,
-    },
-
-    # --- 2. Lifestyle ---
-    {
-        "category": 2,
-        "question_ar": "إيه نظام نومك؟",
-        "question_en": "What is your sleep schedule?",
-        "question_type": "multiple_choice",
-        "options_ar": ["بدري جدًا — أصحى من ٥-٧ ص", "متوسط — ٧-٩ ص", "متأخر — ٩-١٢ ص", "بوم نايت — أصحى بالليل"],
-        "options_en": ["Early bird — wake 5-7 AM", "Moderate — 7-9 AM", "Late — 9 AM-12 PM", "Night owl — sleep by day"],
-        "weight": 1.0, "sort_order": 4,
-    },
-    {
-        "category": 2,
-        "question_ar": "بتدخن ولا لأ؟",
-        "question_en": "Do you smoke?",
-        "question_type": "multiple_choice",
-        "options_ar": ["لا نهائيًا", "سجائر", "شيشة", "Vape", "أحيانًا اجتماعيًا"],
-        "options_en": ["Never", "Cigarettes", "Shisha", "Vape", "Occasionally socially"],
-        "weight": 1.0, "sort_order": 5,
-    },
-    {
-        "category": 2,
-        "question_ar": "بتجيب زوار كتير في البيت؟",
-        "question_en": "How often do you host visitors at home?",
-        "question_type": "multiple_choice",
-        "options_ar": ["نادر جدًا — مرة في الشهر", "أحيانًا — أسبوعيًا", "كتير — مرتين تلاتة في الأسبوع", "دايمًا — كل يوم تقريبًا"],
-        "options_en": ["Rarely — once a month", "Sometimes — weekly", "Often — 2-3 times a week", "Always — almost daily"],
-        "weight": 0.8, "sort_order": 6,
-    },
-    {
-        "category": 2,
-        "question_ar": "مستوى الضوضاء اللي تريحك في البيت؟",
-        "question_en": "Noise level you're comfortable with at home?",
-        "question_type": "multiple_choice",
-        "options_ar": ["هادي جدًا (مكتبة)", "هادي نسبيًا", "معتدل", "عادي — مفيش مشكلة"],
-        "options_en": ["Very quiet (library)", "Relatively quiet", "Moderate", "Fine — no issue"],
-        "weight": 0.7, "sort_order": 7,
-    },
-    {
-        "category": 2,
-        "question_ar": "بتتمرن أو بتعمل رياضة؟",
-        "question_en": "Do you exercise or play sports?",
-        "question_type": "multiple_choice",
-        "options_ar": ["يوميًا", "٣-٤ مرات في الأسبوع", "مرة في الأسبوع", "نادرًا", "لا خالص"],
-        "options_en": ["Daily", "3-4 times a week", "Once a week", "Rarely", "Never"],
-        "weight": 0.5, "sort_order": 8,
-    },
-
-    # --- 3. Social & Cohabitation ---
-    {
-        "category": 3,
-        "question_ar": "إزاي بتتعامل مع الخلاف مع زميل السكن؟",
-        "question_en": "How do you handle conflict with a roommate?",
-        "question_type": "multiple_choice",
-        "options_ar": ["أواجه فورًا وبصراحة", "أنتظر الوقت المناسب", "أتجنب وأمشي", "أفضل شخص وسيط"],
-        "options_en": ["Address directly immediately", "Wait for right time", "Avoid and move on", "Prefer a mediator"],
-        "weight": 0.9, "sort_order": 9,
-    },
-    {
-        "category": 3,
-        "question_ar": "كم مرة تحب تتفاعل مع زميل السكن؟",
-        "question_en": "How often do you want to interact with your roommate?",
-        "question_type": "multiple_choice",
-        "options_ar": ["كل واحد في حاله", "كلام يومي عادي", "جلسات أسبوعيًا", "قضاء معظم الوقت سوا"],
-        "options_en": ["Each in their own space", "Daily casual chat", "Weekly hangouts", "Most time together"],
-        "weight": 0.8, "sort_order": 10,
-    },
-    {
-        "category": 3,
-        "question_ar": "إيه رأيك في مشاركة الأكل والأغراض؟",
-        "question_en": "How do you feel about sharing food and items?",
-        "question_type": "multiple_choice",
-        "options_ar": ["كل حاجة مشتركة", "بعض الحاجات الأساسية", "ممنوع — كل واحد أكلوه وأغراضه"],
-        "options_en": ["Everything shared", "Some basic items", "No — keep separate"],
-        "weight": 0.6, "sort_order": 11,
-    },
-    {
-        "category": 3,
-        "question_ar": "موقفك من استضافة الأصدقاء في البيت؟",
-        "question_en": "Your stance on hosting friends at home?",
-        "question_type": "multiple_choice",
-        "options_ar": ["ممنوع تمامًا", "مسموح بإخطار", "مسموح بحرية", "حسب الاتفاق"],
-        "options_en": ["Not allowed", "Allowed with notice", "Freely allowed", "Depends on agreement"],
-        "weight": 0.7, "sort_order": 12,
-    },
-
-    # --- 4. Finance & Cleanliness ---
-    {
-        "category": 4,
-        "question_ar": "إزاي تقسم الفواتير (كهربا، ميا، نت)؟",
-        "question_en": "How to split bills (electricity, water, internet)?",
-        "question_type": "multiple_choice",
-        "options_ar": ["بالتساوي", "حسب الاستخدام", "كل واحد حصته", "صندوق مشترك شهري"],
-        "options_en": ["Equally", "By usage", "Each pays share", "Monthly joint fund"],
-        "weight": 0.9, "sort_order": 13,
-    },
-    {
-        "category": 4,
-        "question_ar": "التزامك بدفع الإيجار والفواتير؟",
-        "question_en": "Your commitment to paying rent/bills on time?",
-        "question_type": "multiple_choice",
-        "options_ar": ["دايمًا في الميعاد بالظبط", "في الميعاد غالبًا", "أحيانًا بتأخر", "بنسى — محتاج تذكير"],
-        "options_en": ["Always exactly on time", "Mostly on time", "Sometimes late", "I forget — need reminders"],
-        "weight": 1.0, "sort_order": 14,
-    },
-    {
-        "category": 4,
-        "question_ar": "مستوى النضافة اللي يريحك في الأماكن المشتركة؟",
-        "question_en": "Cleanliness level you prefer in shared spaces?",
-        "question_type": "multiple_choice",
-        "options_ar": ["متعقّد — لازم كل حاجة نضيفة دايمًا", "مرتب — بنضف بانتظام", "عادي — بنضف لما أحتاج", "عادي — الفوضى مش مشكلة"],
-        "options_en": ["Obsessed — always spotless", "Tidy — clean regularly", "Normal — clean when needed", "Casual — clutter is fine"],
-        "weight": 1.0, "sort_order": 15,
-    },
-    {
-        "category": 4,
-        "question_ar": "تقسيم مهام النضافة: إيه المناسب ليك؟",
-        "question_en": "Chores division: what works for you?",
-        "question_type": "multiple_choice",
-        "options_ar": ["جدول أسبوعي منظم", "بالتناوب", "كل واحد ينضف ورا نفسه", "أدفع لخدمة نظافة"],
-        "options_en": ["Organized weekly schedule", "Rotation", "Each cleans after self", "Hire a cleaning service"],
-        "weight": 0.9, "sort_order": 16,
-    },
+    {"category": 1, "question_ar": "كم عمرك؟", "question_en": "What is your age group?", "options_ar": ["أقل من 20", "20-24", "25-30", "أكثر من 30"], "options_en": ["Under 20", "20-24", "25-30", "30+"], "weight": 0.03, "sort_order": 1},
+    {"category": 1, "question_ar": "وضعك الحالي؟", "question_en": "What is your current status?", "options_ar": ["طالب", "موظف", "عمل حر", "طالب وموظف"], "options_en": ["Student", "Employee", "Freelancer", "Working & Studying"], "weight": 0.05, "sort_order": 2},
+    {"category": 1, "question_ar": "مجال دراستك أو عملك؟", "question_en": "Your field of study or work?", "options_ar": ["هندسة", "طب", "حاسبات", "أعمال", "فنون", "تعليم", "قانون", "أخرى"], "options_en": ["Engineering", "Medicine", "IT-CS", "Business", "Arts", "Education", "Law", "Other"], "weight": 0.05, "sort_order": 3},
+    {"category": 2, "question_ar": "أكثر وقت مشغول في يومك؟", "question_en": "Most busy time during the day?", "options_ar": ["الصبح بدري", "متأخر الصباح", "الظهر", "المساء", "الليل"], "options_en": ["Early morning", "Late morning", "Afternoon", "Evening", "Night"], "weight": 0.10, "sort_order": 4},
+    {"category": 2, "question_ar": "موعد نومك المعتاد؟", "question_en": "Typical sleeping time?", "options_ar": ["قبل 10", "10-12", "12-2 ص", "بعد 2 ص"], "options_en": ["Before 10PM", "10PM-12AM", "12AM-2AM", "After 2AM"], "weight": 0.14, "sort_order": 5},
+    {"category": 2, "question_ar": "أول حاجة تعملها لما ترجع البيت؟", "question_en": "First action after returning home?", "options_ar": ["أتغسل", "أروح أوضتي", "آكل", "أتحدث مع الناس"], "options_en": ["Wash/shower", "Go to my room", "Eat", "Start socializing"], "weight": 0.04, "sort_order": 6},
+    {"category": 3, "question_ar": "رد فعلك على الفوضى في الأماكن المشتركة؟", "question_en": "Reaction to mess in shared spaces?", "options_ar": ["أنضف فورًا", "أضايق لكن أستنى", "أنضف لما أفرغ", "مش مشكلة"], "options_en": ["Clean immediately", "Get annoyed but wait", "Clean when I have time", "Doesn't bother me"], "weight": 0.14, "sort_order": 7},
+    {"category": 3, "question_ar": "بتقضي أيام إجازتك إزاي؟", "question_en": "How do you spend free days?", "options_ar": ["في البيت", "مع صحابي", "دراسة أو شغل", "هوايات", "زيارة أهلي"], "options_en": ["At home", "Out with friends", "Studying/working", "Hobbies", "Visiting family"], "weight": 0.03, "sort_order": 8},
+    {"category": 3, "question_ar": "بتشارك في الأنشطة الجماعية؟", "question_en": "Do you participate in group activities?", "options_ar": ["بحبها دايمًا", "أحيانًا", "نادرًا", "بحب أكون لوحدي"], "options_en": ["Love it", "Sometimes", "Rarely", "Prefer alone"], "weight": 0.07, "sort_order": 9},
+    {"category": 3, "question_ar": "البيئة اللي تريحك في المذاكرة أو الشغل؟", "question_en": "Preferred study/work environment?", "options_ar": ["هادئ خاص", "متوسط", "كافيهات", "أي مكان"], "options_en": ["Quiet private", "Moderate noise", "Cafes/public", "Flexible"], "weight": 0.08, "sort_order": 10},
+    {"category": 4, "question_ar": "موقفك من التدخين؟", "question_en": "Smoking preference?", "options_ar": ["لا أدخن وأفضل غير مدخن", "لا أدخن ومش مشكلة", "أدخن ومش مشكلة", "أدخن وأفضل مدخن"], "options_en": ["Non-smoker prefer non-smoker", "Non-smoker okay", "Smoker okay with others", "Smoker prefer smoker"], "weight": 0.14, "sort_order": 11},
+    {"category": 4, "question_ar": "أكتر حاجة بتضايقك في السكن المشترك؟", "question_en": "Biggest shared housing frustration?", "options_ar": ["الفوضى", "الضوضاء", "الفواتير", "قلة الخصوصية", "اختلاف المواعيد"], "options_en": ["Mess", "Noise", "Bills", "Lack of privacy", "Different schedules"], "weight": 0.05, "sort_order": 12},
+    {"category": 4, "question_ar": "مرونتك تجاه أنماط الحياة المختلفة؟", "question_en": "Flexibility toward different lifestyles?", "options_ar": ["جداً", "نوعاً ما", "أفضل نمط مشابه", "لازم نفس أسلوب حياتي"], "options_en": ["Very flexible", "Somewhat flexible", "Prefer similar", "Must match mine"], "weight": 0.08, "sort_order": 13},
 ]
-
 
 def seed():
     session = get_session()
-
     session.query(QuestionnaireQuestion).delete()
     session.query(QuestionnaireCategory).delete()
     session.commit()
@@ -191,7 +47,6 @@ def seed():
 
     session.commit()
     print(f"Seeded {len(CATEGORIES)} categories and {len(QUESTIONS)} questions")
-
 
 if __name__ == "__main__":
     seed()
