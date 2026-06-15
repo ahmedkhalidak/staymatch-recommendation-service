@@ -14,14 +14,21 @@ class UserProfile(Base):
     auth_user_id = Column(UUID(as_uuid=True))
     external_user_id = Column(String(255), unique=True)
     full_name = Column(Text)
-    phone = Column(String(50))
+    first_name = Column(Text)
+    last_name = Column(Text)
     gender = Column(String(20))
+    birth_date = Column(DateTime)
     birth_year = Column(Integer)
-    nationality = Column(String(100))
-    occupation = Column(String(100))
+    city = Column(String(100))
+    governorate = Column(String(100))
+    university = Column(String(100))
+    field_of_study = Column(String(100))
+    job_title = Column(String(100))
+    about_me = Column(Text)
+    status = Column(String(50))
+    is_profile_complete = Column(Boolean, default=False)
     created_at = Column(DateTime, server_default=func.current_timestamp())
-    updated_at = Column(DateTime, server_default=func.current_timestamp())
-
+    updated_at = Column(DateTime, server_default=func.current_timestamp(), onupdate=func.current_timestamp())
 
 Index("idx_user_profiles_auth", UserProfile.auth_user_id)
 Index("idx_user_profiles_external", UserProfile.external_user_id)
@@ -60,20 +67,22 @@ class UserQuestionnaireAnswer(Base):
     __tablename__ = "user_questionnaire_answers"
 
     id = Column(Integer, primary_key=True)
-    user_id = Column(String(255), nullable=False)
+    user_profile_id = Column(UUID(as_uuid=True), ForeignKey("user_profiles.id"), nullable=False)
     question_id = Column(Integer, ForeignKey("questionnaire_questions.id"), nullable=False)
     answer_value = Column(Text, nullable=False)
     answer_scale = Column(Integer)
     answered_at = Column(DateTime, server_default=func.current_timestamp())
+    created_at = Column(DateTime, server_default=func.current_timestamp())
+    updated_at = Column(DateTime, server_default=func.current_timestamp())
 
     question = relationship("QuestionnaireQuestion", back_populates="answers")
 
     __table_args__ = (
-        UniqueConstraint("user_id", "question_id"),
+        UniqueConstraint("user_profile_id", "question_id"),
     )
 
 
-Index("idx_answers_user", UserQuestionnaireAnswer.user_id)
+Index("idx_answers_user_profile", UserQuestionnaireAnswer.user_profile_id)
 Index("idx_answers_question", UserQuestionnaireAnswer.question_id)
 
 
@@ -81,7 +90,7 @@ class UserSearchPreference(Base):
     __tablename__ = "user_search_preferences"
 
     id = Column(Integer, primary_key=True)
-    user_id = Column(String(255), nullable=False, unique=True)
+    user_profile_id = Column(UUID(as_uuid=True), ForeignKey("user_profiles.id"), nullable=False, unique=True)
     min_budget = Column(Integer)
     max_budget = Column(Integer)
     preferred_city = Column(Text)

@@ -3,7 +3,7 @@ from typing import Optional, Dict, Any
 import asyncio
 
 from app.database.session import get_session
-from app.database.models.user import UserQuestionnaireAnswer
+from app.database.models.user import UserQuestionnaireAnswer, UserProfile
 from app.repositories.questionnaire_repo import QuestionnaireRepository
 from app.services.property_api_client import get_property_api_client
 from app.services.matching.feature_encoding import (
@@ -28,6 +28,13 @@ class CompatibilityEngine:
             if meta.get("matching_key") == matching_key:
                 return qid
         return None
+
+    def _get_user_profile_id(self, external_user_id: str) -> Optional[str]:
+        """Convert external user ID to user_profile_id."""
+        profile = self.session.query(UserProfile).filter(
+            UserProfile.external_user_id == external_user_id
+        ).first()
+        return str(profile.id) if profile else None
 
     def _check_tenant_eligibility(self, seeker_profile, room_data: dict) -> bool:
         """Check if seeker is eligible for room based on tenant restrictions.
@@ -84,9 +91,9 @@ class CompatibilityEngine:
 
         return True
 
-    async def _get_user_profile_from_api(self, user_id: str) -> Optional[Dict[str, Any]]:
+    async def _get_user_profile_from_api(self, user_id: str, token: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Fetch user profile from .NET API."""
-        api_client = get_property_api_client()
+        api_client = get_property_api_client(token=token)
         profile = await api_client.get_user_profile(user_id)
         
         if not profile:
@@ -113,20 +120,21 @@ class CompatibilityEngine:
         except (ValueError, IndexError):
             return None
 
-    async def compute_for_user(self, seeker_id: str) -> dict:
+    async def compute_for_user(self, seeker_id: str, token: Optional[str] = None) -> dict:
         """Compute roommate compatibility for a user across all available rooms.
         
         Fetches rooms from .NET API instead of local sync tables.
         Returns live compatibility scores without database storage.
         """
-        seeker_answers = self._get_answers_as_dict(seeker_id)
-        seeker_profile = await self._get_user_profile_from_api(seeker_id)
+        seeker_profile_id = self._get_user_profile_id(seeker_id)
+        seeker_answers = self._get_answers_as_dict(seeker_profile_id) if seeker_profile_id else {}
+        seeker_profile = await self._get_user_profile_from_api(seeker_id, token=token)
 
         if not seeker_answers and not seeker_profile:
             return {"status": "skipped", "reason": "no data", "matches": []}
 
         # Fetch properties with rooms from .NET API
-        api_client = get_property_api_client()
+        api_client = get_property_api_client(token=token)
         properties = await api_client.get_all_properties_with_rooms()
 
         # Flatten rooms from all properties
@@ -155,6 +163,7 @@ class CompatibilityEngine:
             property_id = room_data.get("property_id")
 
             # Fetch occupants from .NET API
+            api_client = get_property_api_client(token=token)
             occupants = await api_client.get_room_occupants(room_id)
             if not occupants:
                 matches.append({
@@ -173,8 +182,9 @@ class CompatibilityEngine:
                 if occ_user_id == seeker_id:
                     continue
 
-                occ_answers = self._get_answers_as_dict(occ_user_id)
-                occ_profile = await self._get_user_profile_from_api(occ_user_id)
+                occ_profile_id = self._get_user_profile_id(occ_user_id)
+                occ_answers = self._get_answers_as_dict(occ_profile_id) if occ_profile_id else {}
+                occ_profile = await self._get_user_profile_from_api(occ_user_id, token=token)
 
                 if occ_answers and seeker_answers:
                     score = self._compute_pairwise(
@@ -208,7 +218,7 @@ class CompatibilityEngine:
         matches.sort(key=lambda m: m["room_compatibility_score"], reverse=True)
         return {"status": "completed", "seeker_user_id": seeker_id, "matches_count": len(matches), "matches": matches}
 
-    async def compute_property_and_room_scores(self, seeker_id: str, property_id: int) -> dict:
+    async def compute_property_and_room_scores(self, seeker_id: str, property_id: int, token: Optional[str] = None) -> dict:
         """Compute property-level and room-level compatibility scores for a user.
         
         Uses .NET API to fetch occupants and calculates live compatibility scores.
@@ -221,7 +231,7 @@ class CompatibilityEngine:
             Dictionary with property_match_score and room_match_scores, or error if property not found
         """
         # Validate property exists first
-        api_client = get_property_api_client()
+        api_client = get_property_api_client(token=token)
         property_check = await api_client.property_exists(property_id)
         
         if not property_check["exists"]:
@@ -230,8 +240,9 @@ class CompatibilityEngine:
                 "error": property_check.get("error", "Property not found")
             }
         
-        seeker_answers = self._get_answers_as_dict(seeker_id)
-        seeker_profile = await self._get_user_profile_from_api(seeker_id)
+        seeker_profile_id = self._get_user_profile_id(seeker_id)
+        seeker_answers = self._get_answers_as_dict(seeker_profile_id) if seeker_profile_id else {}
+        seeker_profile = await self._get_user_profile_from_api(seeker_id, token=token)
 
         if not seeker_answers and not seeker_profile:
             return {
@@ -241,6 +252,7 @@ class CompatibilityEngine:
             }
         
         # Fetch all occupants in the property with their room assignments
+        api_client = get_property_api_client(token=token)
         property_occupants = await api_client.get_property_occupants(property_id)
         if not property_occupants:
             return {
@@ -282,8 +294,9 @@ class CompatibilityEngine:
             room_pairwise_scores = []
             
             for occ_user_id in occupants:
-                occ_answers = self._get_answers_as_dict(occ_user_id)
-                occ_profile = await self._get_user_profile_from_api(occ_user_id)
+                occ_profile_id = self._get_user_profile_id(occ_user_id)
+                occ_answers = self._get_answers_as_dict(occ_profile_id) if occ_profile_id else {}
+                occ_profile = await self._get_user_profile_from_api(occ_user_id, token=token)
 
                 if occ_answers and seeker_answers:
                     score = self._compute_pairwise(
@@ -326,7 +339,7 @@ class CompatibilityEngine:
             "rooms": rooms_list
         }
 
-    async def compute_properties_match_scores(self, seeker_id: str, property_ids: list) -> dict:
+    async def compute_properties_match_scores(self, seeker_id: str, property_ids: list, token: Optional[str] = None) -> dict:
         """Compute property match scores for specified properties.
         
         Fetches occupants for multiple properties in parallel and computes
@@ -339,8 +352,9 @@ class CompatibilityEngine:
         Returns:
             Dictionary with property_id -> property_match_score mapping, or error for invalid properties
         """
-        seeker_answers = self._get_answers_as_dict(seeker_id)
-        seeker_profile = await self._get_user_profile_from_api(seeker_id)
+        seeker_profile_id = self._get_user_profile_id(seeker_id)
+        seeker_answers = self._get_answers_as_dict(seeker_profile_id) if seeker_profile_id else {}
+        seeker_profile = await self._get_user_profile_from_api(seeker_id, token=token)
 
         if not seeker_answers and not seeker_profile:
             return {
@@ -349,7 +363,7 @@ class CompatibilityEngine:
                 "properties": []
             }
 
-        api_client = get_property_api_client()
+        api_client = get_property_api_client(token=token)
         
         # Validate all properties exist in parallel
         async def check_property(property_id: int):
@@ -409,8 +423,9 @@ class CompatibilityEngine:
             # Calculate pairwise scores for all occupants
             pairwise_scores = []
             for occ_user_id in all_occupants:
-                occ_answers = self._get_answers_as_dict(occ_user_id)
-                occ_profile = await self._get_user_profile_from_api(occ_user_id)
+                occ_profile_id = self._get_user_profile_id(occ_user_id)
+                occ_answers = self._get_answers_as_dict(occ_profile_id) if occ_profile_id else {}
+                occ_profile = await self._get_user_profile_from_api(occ_user_id, token=token)
                 
                 if occ_answers and seeker_answers:
                     score = self._compute_pairwise(
@@ -502,9 +517,9 @@ class CompatibilityEngine:
         agg += min(0.1, empty * 0.03)
         return min(1.0, agg)
 
-    def _get_answers_as_dict(self, user_id: str) -> dict:
+    def _get_answers_as_dict(self, user_profile_id: str) -> dict:
         answers = self.session.query(UserQuestionnaireAnswer).filter(
-            UserQuestionnaireAnswer.user_id == user_id
+            UserQuestionnaireAnswer.user_profile_id == user_profile_id
         ).all()
         result = {}
         for a in answers:

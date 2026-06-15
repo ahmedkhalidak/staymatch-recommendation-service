@@ -17,6 +17,7 @@ class PropertyAPIClient:
         self.timeout = timeout
         self.token = token or settings.PROPERTY_API_TOKEN
         self._client: Optional[httpx.AsyncClient] = None
+        print(f"[PropertyAPIClient] TOKEN = {self.token[:30] if self.token else None}...")
     
     @property
     def client(self) -> httpx.AsyncClient:
@@ -24,6 +25,8 @@ class PropertyAPIClient:
             headers = {}
             if self.token:
                 headers["Authorization"] = f"Bearer {self.token}"
+                print(f"[PropertyAPIClient] AUTH HEADER = {headers['Authorization'][:50]}...")
+            print(f"[PropertyAPIClient] Headers = {headers}")
             self._client = httpx.AsyncClient(timeout=self.timeout, headers=headers)
         return self._client
     
@@ -215,8 +218,15 @@ class PropertyAPIClient:
 _api_client: Optional[PropertyAPIClient] = None
 
 
-def get_property_api_client() -> PropertyAPIClient:
-    """Get or create singleton API client instance."""
+def get_property_api_client(token: Optional[str] = None) -> PropertyAPIClient:
+    """Get or create API client instance with optional token.
+    
+    If token is provided, creates a new instance with that token.
+    Otherwise, returns singleton with default token from settings.
+    """
+    if token:
+        return PropertyAPIClient(token=token)
+    
     global _api_client
     if _api_client is None:
         _api_client = PropertyAPIClient()

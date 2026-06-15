@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     PROPERTY_API_BASE_URL: str = ""
     PROPERTY_API_TOKEN: str = ""  # JWT token for API authentication
 
+    # JWT Authentication configuration
+    JWT_SECRET: str = ""
+    JWT_ISSUER: str = ""
+    JWT_AUDIENCE: str = ""
+
     sync_interval_minutes: int = 5
     API_KEY: str = ""
     scoring_weights_override: Optional[str] = None
