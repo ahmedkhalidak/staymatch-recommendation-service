@@ -51,76 +51,38 @@ class QuestionnaireAnswersSubmit(BaseModel):
 
 
 class QuestionOption(BaseModel):
-    """Single question option."""
-    value: int = Field(..., description="Option value (1-based index)", example=1)
-    label: str = Field(..., description="Option label text", example="18-24")
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "examples": [
-                {
-                    "value": 1,
-                    "label": "18-24"
-                }
-            ]
-        }
-    )
+    """Single question option (bilingual)."""
+    ar: str = Field(..., description="Option text in Arabic", example="18-21")
+    en: str = Field(..., description="Option text in English", example="18-21")
 
 
 class Question(BaseModel):
-    """Single questionnaire question."""
+    """Single questionnaire question (bilingual)."""
     id: int = Field(..., description="Question ID", example=1)
-    machine_key: str = Field(..., description="Machine-readable key for the question", example="age_group")
-    question_text: str = Field(..., description="Question text displayed to user", example="What is your age group?")
-    category: str = Field(..., description="Question category", example="demographics")
-    options: Dict[str, QuestionOption] = Field(..., description="Map of option key to option details")
+    key: str = Field(..., description="Machine-readable key for the question", example="age_group")
+    question_ar: str = Field(..., description="Question text in Arabic", example="ما هي فئتك العمرية؟")
+    question_en: str = Field(..., description="Question text in English", example="What is your age group?")
+    question_type: str = Field(..., description="Question type (ordered, categorical, smoking)", example="ordered")
+    weight: float = Field(..., description="Question weight for scoring", example=3.0)
+    options: Dict[str, QuestionOption] = Field(..., description="Map of option key (1-based) to bilingual option details")
 
-    model_config = ConfigDict(
-        json_schema_extra={
-            "examples": [
-                {
-                    "id": 1,
-                    "machine_key": "age_group",
-                    "question_text": "What is your age group?",
-                    "category": "demographics",
-                    "options": {
-                        "option_1": {"value": 1, "label": "18-24"},
-                        "option_2": {"value": 2, "label": "25-34"},
-                        "option_3": {"value": 3, "label": "35-44"},
-                        "option_4": {"value": 4, "label": "45+"}
-                    }
-                }
-            ]
-        }
-    )
+
+class Category(BaseModel):
+    """Question category (bilingual)."""
+    id: int = Field(..., description="Category ID", example=1)
+    name_ar: str = Field(..., description="Category name in Arabic", example="الخلفية الشخصية")
+    name_en: str = Field(..., description="Category name in English", example="Personal Background")
+
+
+class QuestionCategoryGroup(BaseModel):
+    """Group of questions by category."""
+    category: Category = Field(..., description="Category information")
+    questions: List[Question] = Field(..., description="List of questions in this category")
 
 
 class QuestionnaireQuestionsResponse(BaseModel):
-    """Response containing all questionnaire questions."""
-    questions: List[Question] = Field(..., description="List of all questionnaire questions")
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "examples": [
-                {
-                    "questions": [
-                        {
-                            "id": 1,
-                            "machine_key": "age_group",
-                            "question_text": "What is your age group?",
-                            "category": "demographics",
-                            "options": {
-                                "option_1": {"value": 1, "label": "18-24"},
-                                "option_2": {"value": 2, "label": "25-34"},
-                                "option_3": {"value": 3, "label": "35-44"},
-                                "option_4": {"value": 4, "label": "45+"}
-                            }
-                        }
-                    ]
-                }
-            ]
-        }
-    )
+    """Response containing all questionnaire questions grouped by category."""
+    questions: List[QuestionCategoryGroup] = Field(..., description="List of question groups by category")
 
 
 class QuestionnaireStatusResponse(BaseModel):
