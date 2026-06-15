@@ -1,0 +1,17 @@
+services:
+  - name: staymatch-api
+    dockerfile: ./Dockerfile
+    dockerContext: .
+    ports:
+      - 8000
+    env:
+      - DATABASE_URL
+      - MSSQL_CONNECTION_STRING
+      - API_KEY
+      - JWT_SECRET
+      - JWT_ISSUER
+      - JWT_AUDIENCE
+      - PROPERTY_API_BASE_URL
+      - PROPERTY_API_TOKEN
+      - LOG_LEVEL=INFO
+      - SYNC_INTERVAL_MINUTES=5
