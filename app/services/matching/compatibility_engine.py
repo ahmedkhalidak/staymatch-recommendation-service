@@ -450,9 +450,7 @@ class CompatibilityEngine:
             })
         
         return {
-            "status": "completed",
-            "seeker_user_id": seeker_id,
-            "properties": property_scores
+            "matches": property_scores
         }
 
     def _compute_pairwise(self, answers_a: dict, answers_b: dict, profile_a=None, profile_b=None) -> float:

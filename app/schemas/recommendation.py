@@ -94,6 +94,7 @@ class QuestionnaireStatusResponse(BaseModel):
     completion_percentage: int = Field(..., description="Completion percentage (0-100)", example=38)
     missing_question_ids: List[int] = Field(..., description="IDs of unanswered questions", example=[6, 7, 8, 9, 10, 11, 12, 13])
     next_question_id: Optional[int] = Field(None, description="Next question ID to answer", example=6)
+    completed_at: Optional[str] = Field(None, description="Completion timestamp (ISO format)", example="2024-01-15T10:30:00Z")
 
     model_config = ConfigDict(
         json_schema_extra={

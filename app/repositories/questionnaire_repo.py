@@ -132,7 +132,7 @@ class QuestionnaireRepository:
         completed = answered_count >= len(total_questions) if total_questions else False
         
         # Calculate completion percentage
-        completion_percentage = (answered_count / len(total_questions) * 100) if total_questions else 0
+        completion_percentage = int((answered_count / len(total_questions) * 100)) if total_questions else 0
         
         # Get missing question IDs
         answered_question_ids = set(
