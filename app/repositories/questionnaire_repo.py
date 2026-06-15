@@ -164,7 +164,7 @@ class QuestionnaireRepository:
             "answered_questions": answered_count,
             "total_questions": len(total_questions),
             "completed": completed,
-            "completion_percentage": round(completion_percentage, 1),
+            "completion_percentage": completion_percentage,
             "completed_at": completed_at,
             "missing_question_ids": missing_question_ids,
             "next_question_id": next_question_id
