@@ -1,7 +1,7 @@
 """Questionnaire repository for managing questionnaire data."""
 from sqlalchemy.orm import joinedload
 
-from app.database.session import get_session
+from app.database.session import get_session, retry_on_connection_error
 from app.database.models.user import (
     QuestionnaireCategory,
     QuestionnaireQuestion,
@@ -25,10 +25,12 @@ class QuestionnaireRepository:
 
     def get_questions(self, category_id: int = None):
         """Get active questions, optionally filtered by category."""
-        query = self.session.query(QuestionnaireQuestion).filter(QuestionnaireQuestion.is_active == True)
-        if category_id:
-            query = query.filter(QuestionnaireQuestion.category_id == category_id)
-        return query.order_by(QuestionnaireQuestion.sort_order).all()
+        def _query():
+            query = self.session.query(QuestionnaireQuestion).filter(QuestionnaireQuestion.is_active == True)
+            if category_id:
+                query = query.filter(QuestionnaireQuestion.category_id == category_id)
+            return query.order_by(QuestionnaireQuestion.sort_order).all()
+        return retry_on_connection_error(_query)
 
     def _resolve_user_profile_id(self, external_user_id: str) -> str:
         """Resolve external user ID to user_profile_id."""
@@ -76,28 +78,32 @@ class QuestionnaireRepository:
 
     def get_active_question_weights(self) -> dict[int, float]:
         """Load weights for all active questions from database."""
-        questions = self.session.query(QuestionnaireQuestion).filter(
-            QuestionnaireQuestion.is_active == True
-        ).all()
-        return {q.id: q.weight for q in questions}
+        def _query():
+            questions = self.session.query(QuestionnaireQuestion).filter(
+                QuestionnaireQuestion.is_active == True
+            ).all()
+            return {q.id: q.weight for q in questions}
+        return retry_on_connection_error(_query)
 
     def get_active_question_metadata(self) -> dict:
         """Load metadata for all active questions including type, options, and text."""
-        questions = self.session.query(QuestionnaireQuestion).filter(
-            QuestionnaireQuestion.is_active == True
-        ).all()
-        return {
-            q.id: {
-                "question_type": q.question_type,
-                "options_ar": q.options_ar,
-                "options_en": q.options_en,
-                "weight": q.weight,
-                "question_en": q.question_en,
-                "question_ar": q.question_ar,
-                "matching_key": getattr(q, "matching_key", None),
+        def _query():
+            questions = self.session.query(QuestionnaireQuestion).filter(
+                QuestionnaireQuestion.is_active == True
+            ).all()
+            return {
+                q.id: {
+                    "question_type": q.question_type,
+                    "options_ar": q.options_ar,
+                    "options_en": q.options_en,
+                    "weight": q.weight,
+                    "question_en": q.question_en,
+                    "question_ar": q.question_ar,
+                    "matching_key": getattr(q, "matching_key", None),
+                }
+                for q in questions
             }
-            for q in questions
-        }
+        return retry_on_connection_error(_query)
 
     def get_question_by_matching_key(self, matching_key: str):
         """Get a question by its matching_key."""
@@ -181,6 +187,8 @@ class QuestionnaireRepository:
 
     def get_all_active_questions(self):
         """Get all active questions ordered by sort_order."""
-        return self.session.query(QuestionnaireQuestion).filter(
-            QuestionnaireQuestion.is_active == True
-        ).order_by(QuestionnaireQuestion.sort_order).all()
+        def _query():
+            return self.session.query(QuestionnaireQuestion).filter(
+                QuestionnaireQuestion.is_active == True
+            ).order_by(QuestionnaireQuestion.sort_order).all()
+        return retry_on_connection_error(_query)

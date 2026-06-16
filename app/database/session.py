@@ -52,6 +52,24 @@ def get_session():
     return _session_factory()
 
 
+def retry_on_connection_error(func, max_retries=3, delay=1):
+    """Retry function on connection errors with exponential backoff."""
+    for attempt in range(max_retries):
+        try:
+            return func()
+        except OperationalError as e:
+            if "SSL connection has been closed unexpectedly" in str(e) or "connection closed" in str(e).lower():
+                if attempt < max_retries - 1:
+                    logger.warning("Connection error (attempt %d/%d), retrying...", attempt + 1, max_retries)
+                    time.sleep(delay * (2 ** attempt))
+                else:
+                    logger.error("Connection failed after %d attempts: %s", max_retries, e)
+                    raise
+            else:
+                raise
+    return None
+
+
 def get_mssql_engine():
     """Create MSSQL engine using FreeTDS (same driver as chatbot)."""
     settings = Settings()
