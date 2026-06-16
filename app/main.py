@@ -32,13 +32,13 @@ app = FastAPI(
     version="2.0.0",
     lifespan=lifespan,
     openapi_tags=tags_metadata,
-    security=[{"BearerAuth": []}],
+    security=[{"HTTPBearer": []}],
 )
 
 
 # Configure OpenAPI security scheme for Bearer JWT authentication
 app.openapi_security_schema = {
-    "BearerAuth": {
+    "HTTPBearer": {
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT"
