@@ -39,10 +39,9 @@ app = FastAPI(
 # Configure OpenAPI security scheme for Bearer JWT authentication
 app.openapi_security_schema = {
     "BearerAuth": {
-        "type": "apiKey",
-        "in": "header",
-        "name": "Authorization",
-        "description": "Enter the full Authorization header value including 'Bearer' prefix (e.g., 'Bearer eyJhbGci...')"
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
     }
 }
 
