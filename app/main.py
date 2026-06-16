@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
+from starlette.middleware.base import BaseHTTPMiddleware
 import logging
 
 from app.database.session import test_connection
@@ -61,6 +62,21 @@ def custom_openapi():
 
 
 app.openapi = custom_openapi
+
+
+# Middleware to log incoming request headers for diagnostics
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        auth_present = "Authorization" in request.headers
+        logger.info(f"Request: {request.method} {request.url.path} - Authorization present: {auth_present}")
+        if auth_present:
+            auth_header = request.headers.get("Authorization", "")
+            logger.info(f"Authorization header prefix: {auth_header[:20] if auth_header else 'empty'}...")
+        response = await call_next(request)
+        return response
+
+
+app.add_middleware(RequestLoggingMiddleware)
 
 app.include_router(health_router)
 app.include_router(main_router)
