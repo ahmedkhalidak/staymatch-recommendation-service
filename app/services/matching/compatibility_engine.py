@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 import asyncio
 
-from app.database.session import get_session
+from app.database.session import get_session, session_scope
 from app.database.models.user import UserQuestionnaireAnswer, UserProfile
 from app.repositories.questionnaire_repo import QuestionnaireRepository
 from app.services.property_api_client import get_property_api_client
@@ -14,13 +14,19 @@ from app.services.matching.feature_encoding import (
 
 class CompatibilityEngine:
     def __init__(self):
-        self.session = get_session()
         self.questionnaire_repo = QuestionnaireRepository()
         # Load dynamic weights and metadata
         self.weights, self.question_metadata, self.smoking_question_id = load_questionnaire_weights_and_metadata()
         # Identify age and occupation question IDs using matching_key
         self.age_question_id = self._find_question_by_matching_key("age")
         self.occupation_question_id = self._find_question_by_matching_key("occupation")
+        self._session = None  # Per-call session, set by compute_* methods
+
+    def _get_session(self):
+        """Return current per-call session or create one lazily."""
+        if self._session is None:
+            self._session = get_session()
+        return self._session
 
     def _find_question_by_matching_key(self, matching_key: str) -> Optional[int]:
         """Find question ID by matching_key."""
@@ -31,7 +37,8 @@ class CompatibilityEngine:
 
     def _get_user_profile_id(self, external_user_id: str) -> Optional[str]:
         """Convert external user ID to user_profile_id."""
-        profile = self.session.query(UserProfile).filter(
+        session = self._get_session()
+        profile = session.query(UserProfile).filter(
             UserProfile.external_user_id == external_user_id
         ).first()
         return str(profile.id) if profile else None
@@ -126,97 +133,99 @@ class CompatibilityEngine:
         Fetches rooms from .NET API instead of local sync tables.
         Returns live compatibility scores without database storage.
         """
-        seeker_profile_id = self._get_user_profile_id(seeker_id)
-        seeker_answers = self._get_answers_as_dict(seeker_profile_id) if seeker_profile_id else {}
-        seeker_profile = await self._get_user_profile_from_api(seeker_id, token=token)
+        session = get_session()
+        self._session = session
+        try:
+            seeker_profile_id = self._get_user_profile_id(seeker_id)
+            seeker_answers = self._get_answers_as_dict(seeker_profile_id) if seeker_profile_id else {}
+            seeker_profile = await self._get_user_profile_from_api(seeker_id, token=token)
 
-        if not seeker_answers and not seeker_profile:
-            return {"status": "skipped", "reason": "no data", "matches": []}
+            if not seeker_answers and not seeker_profile:
+                return {"status": "skipped", "reason": "no data", "matches": []}
 
-        # Fetch properties with rooms from .NET API
-        api_client = get_property_api_client(token=token)
-        properties = await api_client.get_all_properties_with_rooms()
-
-        # Flatten rooms from all properties
-        rooms = []
-        for prop in properties:
-            prop_rooms = prop.get("rooms", [])
-            for room in prop_rooms:
-                # Add property context to room data
-                room_data = {
-                    **room,
-                    "property_id": prop.get("id"),
-                    "property_city": prop.get("city"),
-                    "property_government": prop.get("government"),
-                }
-                # Filter for available rooms only
-                if room.get("capacityAvailable", 0) > 0:
-                    rooms.append(room_data)
-
-        matches = []
-        
-        for room_data in rooms:
-            if not self._check_tenant_eligibility(seeker_profile, room_data):
-                continue
-
-            room_id = room_data.get("id")
-            property_id = room_data.get("property_id")
-
-            # Fetch occupants from .NET API
+            # Fetch properties with rooms from .NET API
             api_client = get_property_api_client(token=token)
-            occupants = await api_client.get_room_occupants(room_id)
-            if not occupants:
+            properties = await api_client.get_all_properties_with_rooms()
+
+            # Flatten rooms from all properties
+            rooms = []
+            for prop in properties:
+                prop_rooms = prop.get("rooms", [])
+                for room in prop_rooms:
+                    room_data = {
+                        **room,
+                        "property_id": prop.get("id"),
+                        "property_city": prop.get("city"),
+                        "property_government": prop.get("government"),
+                    }
+                    if room.get("capacityAvailable", 0) > 0:
+                        rooms.append(room_data)
+
+            matches = []
+
+            for room_data in rooms:
+                if not self._check_tenant_eligibility(seeker_profile, room_data):
+                    continue
+
+                room_id = room_data.get("id")
+                property_id = room_data.get("property_id")
+
+                api_client = get_property_api_client(token=token)
+                occupants = await api_client.get_room_occupants(room_id)
+                if not occupants:
+                    matches.append({
+                        "room_id": room_id,
+                        "property_id": property_id,
+                        "room_compatibility_score": 0.65,
+                        "roommate_count": 0,
+                        "explanation": "Room is empty",
+                    })
+                    continue
+
+                pairwise_scores = []
+                roommate_details = []
+
+                for occ_user_id in occupants:
+                    if occ_user_id == seeker_id:
+                        continue
+
+                    occ_profile_id = self._get_user_profile_id(occ_user_id)
+                    occ_answers = self._get_answers_as_dict(occ_profile_id) if occ_profile_id else {}
+                    occ_profile = await self._get_user_profile_from_api(occ_user_id, token=token)
+
+                    if occ_answers and seeker_answers:
+                        score = self._compute_pairwise(
+                            seeker_answers, occ_answers,
+                            seeker_profile, occ_profile
+                        )
+                    else:
+                        score = self._profile_only_score(seeker_profile, occ_profile)
+
+                    pairwise_scores.append(score)
+                    roommate_details.append({
+                        "user_id": occ_user_id,
+                        "score": round(score, 4),
+                    })
+
+                if not pairwise_scores:
+                    continue
+
+                room_capacity = room_data.get("capacity", 1)
+                room_score = self._aggregate_room_score(pairwise_scores, room_capacity, len(occupants))
+
                 matches.append({
                     "room_id": room_id,
                     "property_id": property_id,
-                    "room_compatibility_score": 0.65,
-                    "roommate_count": 0,
-                    "explanation": "Room is empty",
-                })
-                continue
-
-            pairwise_scores = []
-            roommate_details = []
-
-            for occ_user_id in occupants:
-                if occ_user_id == seeker_id:
-                    continue
-
-                occ_profile_id = self._get_user_profile_id(occ_user_id)
-                occ_answers = self._get_answers_as_dict(occ_profile_id) if occ_profile_id else {}
-                occ_profile = await self._get_user_profile_from_api(occ_user_id, token=token)
-
-                if occ_answers and seeker_answers:
-                    score = self._compute_pairwise(
-                        seeker_answers, occ_answers,
-                        seeker_profile, occ_profile
-                    )
-                else:
-                    score = self._profile_only_score(seeker_profile, occ_profile)
-
-                # Include all pairwise scores in aggregation (no threshold filtering)
-                pairwise_scores.append(score)
-                roommate_details.append({
-                    "user_id": occ_user_id,
-                    "score": round(score, 4),
+                    "room_compatibility_score": round(room_score, 4),
+                    "roommate_count": len(pairwise_scores),
+                    "roommate_details": roommate_details,
                 })
 
-            if not pairwise_scores:
-                continue
-
-            room_capacity = room_data.get("capacity", 1)
-            room_score = self._aggregate_room_score(pairwise_scores, room_capacity, len(occupants))
-            
-            matches.append({
-                "room_id": room_id,
-                "property_id": property_id,
-                "room_compatibility_score": round(room_score, 4),
-                "roommate_count": len(pairwise_scores),
-                "roommate_details": roommate_details,
-            })
-
-        matches.sort(key=lambda m: m["room_compatibility_score"], reverse=True)
-        return {"status": "completed", "seeker_user_id": seeker_id, "matches_count": len(matches), "matches": matches}
+            matches.sort(key=lambda m: m["room_compatibility_score"], reverse=True)
+            return {"status": "completed", "seeker_user_id": seeker_id, "matches_count": len(matches), "matches": matches}
+        finally:
+            session.close()
+            self._session = None
 
     async def compute_property_and_room_scores(self, seeker_id: str, property_id: int, token: Optional[str] = None) -> dict:
         """Compute property-level and room-level compatibility scores for a user.
@@ -230,114 +239,116 @@ class CompatibilityEngine:
         Returns:
             Dictionary with property_match_score and room_match_scores, or error if property not found
         """
-        # Validate property exists first
-        api_client = get_property_api_client(token=token)
-        property_check = await api_client.property_exists(property_id)
-        
-        if not property_check["exists"]:
-            return {
-                "property_id": property_id,
-                "error": property_check.get("error", "Property not found")
-            }
-        
-        seeker_profile_id = self._get_user_profile_id(seeker_id)
-        seeker_answers = self._get_answers_as_dict(seeker_profile_id) if seeker_profile_id else {}
-        seeker_profile = await self._get_user_profile_from_api(seeker_id, token=token)
+        session = get_session()
+        self._session = session
+        try:
+            # Validate property exists first
+            api_client = get_property_api_client(token=token)
+            property_check = await api_client.property_exists(property_id)
 
-        if not seeker_answers and not seeker_profile:
-            return {
-                "property_id": property_id,
-                "property_match_score": 0.5,
-                "rooms": []
-            }
-        
-        # Fetch all occupants in the property with their room assignments
-        api_client = get_property_api_client(token=token)
-        property_occupants = await api_client.get_property_occupants(property_id)
-        if not property_occupants:
-            return {
-                "property_id": property_id,
-                "property_match_score": 0.65,
-                "rooms": []
-            }
-
-        # Group occupants by room
-        rooms_map = {}
-        all_occupants = []
-        
-        for occ in property_occupants:
-            user_id = occ.get("userId")
-            room_id = occ.get("roomId")
-            
-            # Skip the seeker if they're already in the property
-            if user_id == seeker_id:
-                continue
-            
-            all_occupants.append(user_id)
-            
-            if room_id not in rooms_map:
-                rooms_map[room_id] = []
-            rooms_map[room_id].append(user_id)
-
-        if not all_occupants:
-            return {
-                "property_id": property_id,
-                "property_match_score": 0.65,
-                "rooms": []
-            }
-
-        # Calculate pairwise scores for all occupants in property
-        all_pairwise_scores = []
-        room_scores = {}
-
-        for room_id, occupants in rooms_map.items():
-            room_pairwise_scores = []
-            
-            for occ_user_id in occupants:
-                occ_profile_id = self._get_user_profile_id(occ_user_id)
-                occ_answers = self._get_answers_as_dict(occ_profile_id) if occ_profile_id else {}
-                occ_profile = await self._get_user_profile_from_api(occ_user_id, token=token)
-
-                if occ_answers and seeker_answers:
-                    score = self._compute_pairwise(
-                        seeker_answers, occ_answers,
-                        seeker_profile, occ_profile
-                    )
-                else:
-                    score = self._profile_only_score(seeker_profile, occ_profile)
-
-                # Include all pairwise scores in aggregation (no threshold filtering)
-                room_pairwise_scores.append(score)
-                all_pairwise_scores.append(score)
-
-            # Calculate room-level score (average of pairwise scores in that room)
-            if room_pairwise_scores:
-                room_score = sum(room_pairwise_scores) / len(room_pairwise_scores)
-                room_scores[room_id] = {
-                    "room_id": room_id,
-                    "room_match_score": round(room_score, 4),
-                    "occupants_count": len(room_pairwise_scores)
+            if not property_check["exists"]:
+                return {
+                    "property_id": property_id,
+                    "error": property_check.get("error", "Property not found")
                 }
 
-        # Calculate property-level score (average of all pairwise scores in property)
-        # Fallback to 0.65 only when no occupants exist (handled earlier)
-        # If occupants exist, always calculate actual average even if scores are low
-        if all_pairwise_scores:
-            property_score = sum(all_pairwise_scores) / len(all_pairwise_scores)
-        else:
-            # This should only happen if all_occupants was empty (handled earlier)
-            # or if all scores failed to compute (edge case)
-            property_score = 0.65
+            seeker_profile_id = self._get_user_profile_id(seeker_id)
+            seeker_answers = self._get_answers_as_dict(seeker_profile_id) if seeker_profile_id else {}
+            seeker_profile = await self._get_user_profile_from_api(seeker_id, token=token)
 
-        # Build response
-        rooms_list = list(room_scores.values())
-        rooms_list.sort(key=lambda r: r["room_match_score"], reverse=True)
+            if not seeker_answers and not seeker_profile:
+                return {
+                    "property_id": property_id,
+                    "property_match_score": 0.5,
+                    "rooms": []
+                }
 
-        return {
-            "property_id": property_id,
-            "property_match_score": round(property_score, 4),
-            "rooms": rooms_list
-        }
+            # Fetch all occupants in the property with their room assignments
+            api_client = get_property_api_client(token=token)
+            property_occupants = await api_client.get_property_occupants(property_id)
+            if not property_occupants:
+                return {
+                    "property_id": property_id,
+                    "property_match_score": 0.65,
+                    "rooms": []
+                }
+
+            # Group occupants by room
+            rooms_map = {}
+            all_occupants = []
+
+            for occ in property_occupants:
+                user_id = occ.get("userId")
+                room_id = occ.get("roomId")
+
+                # Skip the seeker if they're already in the property
+                if user_id == seeker_id:
+                    continue
+
+                all_occupants.append(user_id)
+
+                if room_id not in rooms_map:
+                    rooms_map[room_id] = []
+                rooms_map[room_id].append(user_id)
+
+            if not all_occupants:
+                return {
+                    "property_id": property_id,
+                    "property_match_score": 0.65,
+                    "rooms": []
+                }
+
+            # Calculate pairwise scores for all occupants in property
+            all_pairwise_scores = []
+            room_scores = {}
+
+            for room_id, occupants in rooms_map.items():
+                room_pairwise_scores = []
+
+                for occ_user_id in occupants:
+                    occ_profile_id = self._get_user_profile_id(occ_user_id)
+                    occ_answers = self._get_answers_as_dict(occ_profile_id) if occ_profile_id else {}
+                    occ_profile = await self._get_user_profile_from_api(occ_user_id, token=token)
+
+                    if occ_answers and seeker_answers:
+                        score = self._compute_pairwise(
+                            seeker_answers, occ_answers,
+                            seeker_profile, occ_profile
+                        )
+                    else:
+                        score = self._profile_only_score(seeker_profile, occ_profile)
+
+                    # Include all pairwise scores in aggregation (no threshold filtering)
+                    room_pairwise_scores.append(score)
+                    all_pairwise_scores.append(score)
+
+                # Calculate room-level score (average of pairwise scores in that room)
+                if room_pairwise_scores:
+                    room_score = sum(room_pairwise_scores) / len(room_pairwise_scores)
+                    room_scores[room_id] = {
+                        "room_id": room_id,
+                        "room_match_score": round(room_score, 4),
+                        "occupants_count": len(room_pairwise_scores)
+                    }
+
+            # Calculate property-level score (average of all pairwise scores in property)
+            if all_pairwise_scores:
+                property_score = sum(all_pairwise_scores) / len(all_pairwise_scores)
+            else:
+                property_score = 0.65
+
+            # Build response
+            rooms_list = list(room_scores.values())
+            rooms_list.sort(key=lambda r: r["room_match_score"], reverse=True)
+
+            return {
+                "property_id": property_id,
+                "property_match_score": round(property_score, 4),
+                "rooms": rooms_list
+            }
+        finally:
+            session.close()
+            self._session = None
 
     async def compute_properties_match_scores(self, seeker_id: str, property_ids: list, token: Optional[str] = None) -> dict:
         """Compute property match scores for specified properties.
@@ -352,106 +363,106 @@ class CompatibilityEngine:
         Returns:
             Dictionary with property_id -> property_match_score mapping, or error for invalid properties
         """
-        seeker_profile_id = self._get_user_profile_id(seeker_id)
-        seeker_answers = self._get_answers_as_dict(seeker_profile_id) if seeker_profile_id else {}
-        seeker_profile = await self._get_user_profile_from_api(seeker_id, token=token)
+        session = get_session()
+        self._session = session
+        try:
+            seeker_profile_id = self._get_user_profile_id(seeker_id)
+            seeker_answers = self._get_answers_as_dict(seeker_profile_id) if seeker_profile_id else {}
+            seeker_profile = await self._get_user_profile_from_api(seeker_id, token=token)
 
-        if not seeker_answers and not seeker_profile:
-            return {
-                "status": "skipped",
-                "reason": "no data",
-                "properties": []
-            }
+            if not seeker_answers and not seeker_profile:
+                return {
+                    "status": "skipped",
+                    "reason": "no data",
+                    "properties": []
+                }
 
-        api_client = get_property_api_client(token=token)
-        
-        # Validate all properties exist in parallel
-        async def check_property(property_id: int):
-            check = await api_client.property_exists(property_id)
-            return property_id, check
-        
-        checks = await asyncio.gather(*[check_property(pid) for pid in property_ids])
-        property_checks = {pid: check for pid, check in checks}
-        
-        # Fetch occupants for valid properties in parallel
-        valid_property_ids = [pid for pid, check in property_checks.items() if check["exists"]]
-        
-        if valid_property_ids:
-            occupants_map = await api_client.get_multiple_property_occupants(valid_property_ids)
-        else:
-            occupants_map = {}
-        
-        property_scores = []
-        
-        for property_id in property_ids:
-            property_check = property_checks.get(property_id)
-            
-            if not property_check["exists"]:
-                # Property not found - add error entry
-                property_scores.append({
-                    "property_id": property_id,
-                    "error": property_check.get("error", "Property not found")
-                })
-                continue
-            
-            # Property exists - fetch occupants and compute score
-            property_occupants = occupants_map.get(property_id, [])
-            
-            if not property_occupants:
-                # No occupants, give a default score
-                property_scores.append({
-                    "property_id": property_id,
-                    "property_match_score": 0.65
-                })
-                continue
-            
-            # Get all occupant user IDs
-            all_occupants = []
-            for occ in property_occupants:
-                user_id = occ.get("userId")
-                if user_id == seeker_id:
-                    continue
-                all_occupants.append(user_id)
-            
-            if not all_occupants:
-                property_scores.append({
-                    "property_id": property_id,
-                    "property_match_score": 0.65
-                })
-                continue
-            
-            # Calculate pairwise scores for all occupants
-            pairwise_scores = []
-            for occ_user_id in all_occupants:
-                occ_profile_id = self._get_user_profile_id(occ_user_id)
-                occ_answers = self._get_answers_as_dict(occ_profile_id) if occ_profile_id else {}
-                occ_profile = await self._get_user_profile_from_api(occ_user_id, token=token)
-                
-                if occ_answers and seeker_answers:
-                    score = self._compute_pairwise(
-                        seeker_answers, occ_answers,
-                        seeker_profile, occ_profile
-                    )
-                else:
-                    score = self._profile_only_score(seeker_profile, occ_profile)
-                
-                # Include all pairwise scores in aggregation (no threshold filtering)
-                pairwise_scores.append(score)
-            
-            # Calculate property-level score
-            if pairwise_scores:
-                property_score = sum(pairwise_scores) / len(pairwise_scores)
+            api_client = get_property_api_client(token=token)
+
+            # Validate all properties exist in parallel
+            async def check_property(property_id: int):
+                check = await api_client.property_exists(property_id)
+                return property_id, check
+
+            checks = await asyncio.gather(*[check_property(pid) for pid in property_ids])
+            property_checks = {pid: check for pid, check in checks}
+
+            # Fetch occupants for valid properties in parallel
+            valid_property_ids = [pid for pid, check in property_checks.items() if check["exists"]]
+
+            if valid_property_ids:
+                occupants_map = await api_client.get_multiple_property_occupants(valid_property_ids)
             else:
-                property_score = 0.65
-            
-            property_scores.append({
-                "property_id": property_id,
-                "property_match_score": round(property_score, 4)
-            })
-        
-        return {
-            "matches": property_scores
-        }
+                occupants_map = {}
+
+            property_scores = []
+
+            for property_id in property_ids:
+                property_check = property_checks.get(property_id)
+
+                if not property_check["exists"]:
+                    property_scores.append({
+                        "property_id": property_id,
+                        "error": property_check.get("error", "Property not found")
+                    })
+                    continue
+
+                # Property exists - fetch occupants and compute score
+                property_occupants = occupants_map.get(property_id, [])
+
+                if not property_occupants:
+                    property_scores.append({
+                        "property_id": property_id,
+                        "property_match_score": 0.65
+                    })
+                    continue
+
+                all_occupants = []
+                for occ in property_occupants:
+                    user_id = occ.get("userId")
+                    if user_id == seeker_id:
+                        continue
+                    all_occupants.append(user_id)
+
+                if not all_occupants:
+                    property_scores.append({
+                        "property_id": property_id,
+                        "property_match_score": 0.65
+                    })
+                    continue
+
+                pairwise_scores = []
+                for occ_user_id in all_occupants:
+                    occ_profile_id = self._get_user_profile_id(occ_user_id)
+                    occ_answers = self._get_answers_as_dict(occ_profile_id) if occ_profile_id else {}
+                    occ_profile = await self._get_user_profile_from_api(occ_user_id, token=token)
+
+                    if occ_answers and seeker_answers:
+                        score = self._compute_pairwise(
+                            seeker_answers, occ_answers,
+                            seeker_profile, occ_profile
+                        )
+                    else:
+                        score = self._profile_only_score(seeker_profile, occ_profile)
+
+                    pairwise_scores.append(score)
+
+                if pairwise_scores:
+                    property_score = sum(pairwise_scores) / len(pairwise_scores)
+                else:
+                    property_score = 0.65
+
+                property_scores.append({
+                    "property_id": property_id,
+                    "property_match_score": round(property_score, 4)
+                })
+
+            return {
+                "matches": property_scores
+            }
+        finally:
+            session.close()
+            self._session = None
 
     def _compute_pairwise(self, answers_a: dict, answers_b: dict, profile_a=None, profile_b=None) -> float:
         # Exclude age and occupation questions from questionnaire scoring to avoid duplicate counting
@@ -516,7 +527,8 @@ class CompatibilityEngine:
         return min(1.0, agg)
 
     def _get_answers_as_dict(self, user_profile_id: str) -> dict:
-        answers = self.session.query(UserQuestionnaireAnswer).filter(
+        session = self._get_session()
+        answers = session.query(UserQuestionnaireAnswer).filter(
             UserQuestionnaireAnswer.user_profile_id == user_profile_id
         ).all()
         result = {}

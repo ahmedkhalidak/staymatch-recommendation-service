@@ -4,22 +4,23 @@ Both services share the same Neon PostgreSQL. The chatbot stores preferences in 
 while the recommendation service uses `user_search_preferences`. This bridge keeps them in sync.
 """
 import logging
-from app.database.session import get_session
 from sqlalchemy import text
+from app.database.session import session_scope
 
 logger = logging.getLogger("staymatch.bridge")
 
 
 class PreferencesBridge:
     def __init__(self):
-        self.session = get_session()
+        pass
 
     def sync_all(self):
         """Sync all user_preferences from chatbot table into user_search_preferences."""
         try:
-            rows = self.session.execute(
-                text("SELECT * FROM user_preferences")
-            ).mappings().all()
+            with session_scope() as session:
+                rows = session.execute(
+                    text("SELECT * FROM user_preferences")
+                ).mappings().all()
         except Exception as e:
             logger.warning("Cannot read chatbot user_preferences: %s", e)
             return {"synced": 0}
@@ -42,34 +43,34 @@ class PreferencesBridge:
             data["preferred_city"] = preferred_location
             data["preferred_government"] = preferred_location
 
-            self.session.execute(
-                text("""
-                    INSERT INTO user_search_preferences 
-                        (user_id, min_budget, max_budget, preferred_city, preferred_government,
-                         tenant_type, gender_preference, furnished, wifi, air_conditioning,
-                         balcony, private_bathroom, shared_room)
-                    VALUES 
-                        (:user_id, :min_budget, :max_budget, :preferred_city, :preferred_government,
-                         :tenant_type, :gender_preference, :furnished, :wifi, :air_conditioning,
-                         :balcony, :private_bathroom, :shared_room)
-                    ON CONFLICT (user_id) DO UPDATE SET
-                        min_budget = EXCLUDED.min_budget,
-                        max_budget = EXCLUDED.max_budget,
-                        preferred_city = EXCLUDED.preferred_city,
-                        preferred_government = EXCLUDED.preferred_government,
-                        tenant_type = EXCLUDED.tenant_type,
-                        gender_preference = EXCLUDED.gender_preference,
-                        furnished = EXCLUDED.furnished,
-                        wifi = EXCLUDED.wifi,
-                        air_conditioning = EXCLUDED.air_conditioning,
-                        balcony = EXCLUDED.balcony,
-                        private_bathroom = EXCLUDED.private_bathroom,
-                        shared_room = EXCLUDED.shared_room
-                """),
-                data
-            )
+            with session_scope() as session:
+                session.execute(
+                    text("""
+                        INSERT INTO user_search_preferences 
+                            (user_id, min_budget, max_budget, preferred_city, preferred_government,
+                             tenant_type, gender_preference, furnished, wifi, air_conditioning,
+                             balcony, private_bathroom, shared_room)
+                        VALUES 
+                            (:user_id, :min_budget, :max_budget, :preferred_city, :preferred_government,
+                             :tenant_type, :gender_preference, :furnished, :wifi, :air_conditioning,
+                             :balcony, :private_bathroom, :shared_room)
+                        ON CONFLICT (user_id) DO UPDATE SET
+                            min_budget = EXCLUDED.min_budget,
+                            max_budget = EXCLUDED.max_budget,
+                            preferred_city = EXCLUDED.preferred_city,
+                            preferred_government = EXCLUDED.preferred_government,
+                            tenant_type = EXCLUDED.tenant_type,
+                            gender_preference = EXCLUDED.gender_preference,
+                            furnished = EXCLUDED.furnished,
+                            wifi = EXCLUDED.wifi,
+                            air_conditioning = EXCLUDED.air_conditioning,
+                            balcony = EXCLUDED.balcony,
+                            private_bathroom = EXCLUDED.private_bathroom,
+                            shared_room = EXCLUDED.shared_room
+                    """),
+                    data
+                )
             synced += 1
 
-        self.session.commit()
         logger.info("PreferencesBridge synced %d users from chatbot preferences", synced)
         return {"synced": synced}
