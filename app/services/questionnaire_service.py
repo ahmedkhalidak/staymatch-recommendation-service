@@ -45,24 +45,27 @@ class QuestionnaireService:
     
     def _transform_question(self, question):
         """Transform question to new API contract format."""
-        machine_key = self.question_key_map.get(question.id, f"question_{question.id}")
+        qid = question["id"] if isinstance(question, dict) else question.id
+        machine_key = self.question_key_map.get(qid, f"question_{qid}")
         
-        # Transform options from arrays to map with 1-based numbering
+        options_ar = question.get("options_ar", []) if isinstance(question, dict) else (question.options_ar or [])
+        options_en = question.get("options_en", []) if isinstance(question, dict) else (question.options_en or [])
+        
         options_map = {}
-        if question.options_ar and question.options_en:
-            for i, (ar, en) in enumerate(zip(question.options_ar, question.options_en)):
-                options_map[str(i + 1)] = {  # 1-based numbering
+        if options_ar and options_en:
+            for i, (ar, en) in enumerate(zip(options_ar, options_en)):
+                options_map[str(i + 1)] = {
                     "ar": ar,
                     "en": en
                 }
         
         return {
-            "id": question.id,
+            "id": qid,
             "key": machine_key,
-            "question_ar": question.question_ar,
-            "question_en": question.question_en,
-            "question_type": question.question_type,
-            "weight": question.weight,
+            "question_ar": question["question_ar"] if isinstance(question, dict) else question.question_ar,
+            "question_en": question["question_en"] if isinstance(question, dict) else question.question_en,
+            "question_type": question["question_type"] if isinstance(question, dict) else question.question_type,
+            "weight": question["weight"] if isinstance(question, dict) else question.weight,
             "options": options_map
         }
     
@@ -94,17 +97,16 @@ class QuestionnaireService:
         
         Raises ValueError with detailed message if validation fails.
         """
-        # Get all questions with their option counts
         questions = self.repo.get_questions()
         
-        # Build a map of machine_key -> option_count
         option_counts = {}
         for q in questions:
-            machine_key = self.question_key_map.get(q.id, f"question_{q.id}")
-            if q.options_ar:
-                option_counts[machine_key] = len(q.options_ar)
+            qid = q["id"] if isinstance(q, dict) else q.id
+            machine_key = self.question_key_map.get(qid, f"question_{qid}")
+            options_ar = q.get("options_ar", []) if isinstance(q, dict) else (q.options_ar or [])
+            if options_ar:
+                option_counts[machine_key] = len(options_ar)
         
-        # Validate each answer
         for machine_key, answer_scale in answers_map.items():
             if machine_key not in option_counts:
                 raise ValueError(f"Unknown question key: {machine_key}")

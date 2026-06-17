@@ -30,7 +30,22 @@ class QuestionnaireRepository:
                     "name_ar": cat.name_ar,
                     "name_en": cat.name_en,
                     "sort_order": cat.sort_order,
-                    "questions": list(cat.questions)  # Force load before session closes
+                    "questions": [
+                        {
+                            "id": q.id,
+                            "question_ar": q.question_ar,
+                            "question_en": q.question_en,
+                            "question_type": q.question_type,
+                            "weight": q.weight,
+                            "options_ar": q.options_ar,
+                            "options_en": q.options_en,
+                            "sort_order": q.sort_order,
+                            "category_id": q.category_id,
+                            "is_active": q.is_active,
+                            "matching_key": getattr(q, "matching_key", None),
+                        }
+                        for q in cat.questions
+                    ]
                 }
                 for cat in categories
             ]
@@ -42,7 +57,23 @@ class QuestionnaireRepository:
                 query = session.query(QuestionnaireQuestion).filter(QuestionnaireQuestion.is_active == True)
                 if category_id:
                     query = query.filter(QuestionnaireQuestion.category_id == category_id)
-                return query.order_by(QuestionnaireQuestion.sort_order).all()
+                questions = query.order_by(QuestionnaireQuestion.sort_order).all()
+                return [
+                    {
+                        "id": q.id,
+                        "question_ar": q.question_ar,
+                        "question_en": q.question_en,
+                        "question_type": q.question_type,
+                        "weight": q.weight,
+                        "options_ar": q.options_ar,
+                        "options_en": q.options_en,
+                        "sort_order": q.sort_order,
+                        "category_id": q.category_id,
+                        "is_active": q.is_active,
+                        "matching_key": getattr(q, "matching_key", None),
+                    }
+                    for q in questions
+                ]
         return retry_on_connection_error(_query)
 
     def _resolve_user_profile_id(self, external_user_id: str) -> str:
@@ -209,7 +240,23 @@ class QuestionnaireRepository:
         """Get all active questions ordered by sort_order."""
         def _query():
             with session_scope() as session:
-                return session.query(QuestionnaireQuestion).filter(
+                questions = session.query(QuestionnaireQuestion).filter(
                     QuestionnaireQuestion.is_active == True
                 ).order_by(QuestionnaireQuestion.sort_order).all()
+                return [
+                    {
+                        "id": q.id,
+                        "question_ar": q.question_ar,
+                        "question_en": q.question_en,
+                        "question_type": q.question_type,
+                        "weight": q.weight,
+                        "options_ar": q.options_ar,
+                        "options_en": q.options_en,
+                        "sort_order": q.sort_order,
+                        "category_id": q.category_id,
+                        "is_active": q.is_active,
+                        "matching_key": getattr(q, "matching_key", None),
+                    }
+                    for q in questions
+                ]
         return retry_on_connection_error(_query)
