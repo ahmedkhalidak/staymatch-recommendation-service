@@ -54,7 +54,7 @@ class ProfileQuestionnaireService:
         """Get complete profile questionnaire data for a user."""
         # Get questionnaire answers
         answers = self.repo.get_answers(external_user_id)
-        answers_map = {a.question_id: a.answer_scale for a in answers}
+        answers_map = {a["question_id"]: a["answer_scale"] for a in answers}
 
         # Get all active questions to calculate missing questions
         all_questions = self.repo.get_all_active_questions()
@@ -70,7 +70,7 @@ class ProfileQuestionnaireService:
 
         # Get missing question IDs
         answered_question_ids = set(answers_map.keys())
-        all_question_ids = {q.id for q in all_questions}
+        all_question_ids = {q["id"] for q in all_questions}
         missing_question_ids = sorted(list(all_question_ids - answered_question_ids))
 
         # Get next question ID (first missing by sort order)
@@ -112,8 +112,8 @@ class ProfileQuestionnaireService:
         """Get the last updated timestamp from answers."""
         if not answers:
             return None
-        latest = max(answers, key=lambda a: a.answered_at)
-        return latest.answered_at.isoformat() if latest.answered_at else None
+        latest = max(answers, key=lambda a: a["answered_at"] or "")
+        return latest["answered_at"] if latest["answered_at"] else None
 
     async def _fetch_about_me(self, external_user_id: str) -> Optional[str]:
         """Fetch about_me from .NET User Profile API."""
@@ -164,15 +164,17 @@ class ProfileQuestionnaireService:
             return HousingPreferences(governorate=None, budget=None)
 
         # Use preferred_government as governorate
-        governorate = search_pref.preferred_government
+        governorate = search_pref.get("preferred_government")
 
         # Calculate budget as average of min and max
-        if search_pref.min_budget is not None and search_pref.max_budget is not None:
-            budget = (search_pref.min_budget + search_pref.max_budget) // 2
-        elif search_pref.min_budget is not None:
-            budget = search_pref.min_budget
-        elif search_pref.max_budget is not None:
-            budget = search_pref.max_budget
+        min_budget = search_pref.get("min_budget")
+        max_budget = search_pref.get("max_budget")
+        if min_budget is not None and max_budget is not None:
+            budget = (min_budget + max_budget) // 2
+        elif min_budget is not None:
+            budget = min_budget
+        elif max_budget is not None:
+            budget = max_budget
         else:
             budget = None
 

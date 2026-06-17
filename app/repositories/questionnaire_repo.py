@@ -118,9 +118,19 @@ class QuestionnaireRepository:
         if not user_profile_id:
             return []
         with session_scope() as session:
-            return session.query(UserQuestionnaireAnswer).filter(
+            answers = session.query(UserQuestionnaireAnswer).filter(
                 UserQuestionnaireAnswer.user_profile_id == user_profile_id
             ).all()
+            # Convert to dicts to avoid DetachedInstanceError after session closes
+            return [
+                {
+                    "question_id": a.question_id,
+                    "answer_value": a.answer_value,
+                    "answer_scale": a.answer_scale,
+                    "answered_at": a.answered_at.isoformat() if a.answered_at else None,
+                }
+                for a in answers
+            ]
 
     def get_active_question_weights(self) -> dict[int, float]:
         """Load weights for all active questions from database."""
@@ -232,9 +242,17 @@ class QuestionnaireRepository:
         if not user_profile_id:
             return None
         with session_scope() as session:
-            return session.query(UserSearchPreference).filter(
+            search_pref = session.query(UserSearchPreference).filter(
                 UserSearchPreference.user_profile_id == user_profile_id
             ).first()
+            if not search_pref:
+                return None
+            # Convert to dict to avoid DetachedInstanceError after session closes
+            return {
+                "preferred_government": search_pref.preferred_government,
+                "min_budget": search_pref.min_budget,
+                "max_budget": search_pref.max_budget,
+            }
 
     def get_all_active_questions(self):
         """Get all active questions ordered by sort_order."""
