@@ -15,29 +15,17 @@ from app.services.matching.feature_encoding import (
 class CompatibilityEngine:
     def __init__(self):
         self.questionnaire_repo = QuestionnaireRepository()
-        # Load dynamic weights and metadata
         self.weights, self.question_metadata, self.smoking_question_id = load_questionnaire_weights_and_metadata()
-        # Identify age and occupation question IDs using matching_key
         self.age_question_id = self._find_question_by_matching_key("age")
         self.occupation_question_id = self._find_question_by_matching_key("occupation")
-        self._session = None  # Per-call session, set by compute_* methods
-
-    def _get_session(self):
-        """Return current per-call session or create one lazily."""
-        if self._session is None:
-            self._session = get_session()
-        return self._session
 
     def _find_question_by_matching_key(self, matching_key: str) -> Optional[int]:
-        """Find question ID by matching_key."""
         for qid, meta in self.question_metadata.items():
             if meta.get("matching_key") == matching_key:
                 return qid
         return None
 
-    def _get_user_profile_id(self, external_user_id: str) -> Optional[str]:
-        """Convert external user ID to user_profile_id."""
-        session = self._get_session()
+    def _get_user_profile_id(self, external_user_id: str, session) -> Optional[str]:
         profile = session.query(UserProfile).filter(
             UserProfile.external_user_id == external_user_id
         ).first()
@@ -134,10 +122,9 @@ class CompatibilityEngine:
         Returns live compatibility scores without database storage.
         """
         session = get_session()
-        self._session = session
         try:
-            seeker_profile_id = self._get_user_profile_id(seeker_id)
-            seeker_answers = self._get_answers_as_dict(seeker_profile_id) if seeker_profile_id else {}
+            seeker_profile_id = self._get_user_profile_id(seeker_id, session)
+            seeker_answers = self._get_answers_as_dict(seeker_profile_id, session) if seeker_profile_id else {}
             seeker_profile = await self._get_user_profile_from_api(seeker_id, token=token)
 
             if not seeker_answers and not seeker_profile:
@@ -189,8 +176,8 @@ class CompatibilityEngine:
                     if occ_user_id == seeker_id:
                         continue
 
-                    occ_profile_id = self._get_user_profile_id(occ_user_id)
-                    occ_answers = self._get_answers_as_dict(occ_profile_id) if occ_profile_id else {}
+                    occ_profile_id = self._get_user_profile_id(occ_user_id, session)
+                    occ_answers = self._get_answers_as_dict(occ_profile_id, session) if occ_profile_id else {}
                     occ_profile = await self._get_user_profile_from_api(occ_user_id, token=token)
 
                     if occ_answers and seeker_answers:
@@ -225,7 +212,6 @@ class CompatibilityEngine:
             return {"status": "completed", "seeker_user_id": seeker_id, "matches_count": len(matches), "matches": matches}
         finally:
             session.close()
-            self._session = None
 
     async def compute_property_and_room_scores(self, seeker_id: str, property_id: int, token: Optional[str] = None) -> dict:
         """Compute property-level and room-level compatibility scores for a user.
@@ -240,7 +226,6 @@ class CompatibilityEngine:
             Dictionary with property_match_score and room_match_scores, or error if property not found
         """
         session = get_session()
-        self._session = session
         try:
             # Validate property exists first
             api_client = get_property_api_client(token=token)
@@ -252,8 +237,8 @@ class CompatibilityEngine:
                     "error": property_check.get("error", "Property not found")
                 }
 
-            seeker_profile_id = self._get_user_profile_id(seeker_id)
-            seeker_answers = self._get_answers_as_dict(seeker_profile_id) if seeker_profile_id else {}
+            seeker_profile_id = self._get_user_profile_id(seeker_id, session)
+            seeker_answers = self._get_answers_as_dict(seeker_profile_id, session) if seeker_profile_id else {}
             seeker_profile = await self._get_user_profile_from_api(seeker_id, token=token)
 
             if not seeker_answers and not seeker_profile:
@@ -306,8 +291,8 @@ class CompatibilityEngine:
                 room_pairwise_scores = []
 
                 for occ_user_id in occupants:
-                    occ_profile_id = self._get_user_profile_id(occ_user_id)
-                    occ_answers = self._get_answers_as_dict(occ_profile_id) if occ_profile_id else {}
+                    occ_profile_id = self._get_user_profile_id(occ_user_id, session)
+                    occ_answers = self._get_answers_as_dict(occ_profile_id, session) if occ_profile_id else {}
                     occ_profile = await self._get_user_profile_from_api(occ_user_id, token=token)
 
                     if occ_answers and seeker_answers:
@@ -348,7 +333,6 @@ class CompatibilityEngine:
             }
         finally:
             session.close()
-            self._session = None
 
     async def compute_properties_match_scores(self, seeker_id: str, property_ids: list, token: Optional[str] = None) -> dict:
         """Compute property match scores for specified properties.
@@ -364,10 +348,9 @@ class CompatibilityEngine:
             Dictionary with property_id -> property_match_score mapping, or error for invalid properties
         """
         session = get_session()
-        self._session = session
         try:
-            seeker_profile_id = self._get_user_profile_id(seeker_id)
-            seeker_answers = self._get_answers_as_dict(seeker_profile_id) if seeker_profile_id else {}
+            seeker_profile_id = self._get_user_profile_id(seeker_id, session)
+            seeker_answers = self._get_answers_as_dict(seeker_profile_id, session) if seeker_profile_id else {}
             seeker_profile = await self._get_user_profile_from_api(seeker_id, token=token)
 
             if not seeker_answers and not seeker_profile:
@@ -433,8 +416,8 @@ class CompatibilityEngine:
 
                 pairwise_scores = []
                 for occ_user_id in all_occupants:
-                    occ_profile_id = self._get_user_profile_id(occ_user_id)
-                    occ_answers = self._get_answers_as_dict(occ_profile_id) if occ_profile_id else {}
+                    occ_profile_id = self._get_user_profile_id(occ_user_id, session)
+                    occ_answers = self._get_answers_as_dict(occ_profile_id, session) if occ_profile_id else {}
                     occ_profile = await self._get_user_profile_from_api(occ_user_id, token=token)
 
                     if occ_answers and seeker_answers:
@@ -462,7 +445,6 @@ class CompatibilityEngine:
             }
         finally:
             session.close()
-            self._session = None
 
     def _compute_pairwise(self, answers_a: dict, answers_b: dict, profile_a=None, profile_b=None) -> float:
         # Exclude age and occupation questions from questionnaire scoring to avoid duplicate counting
@@ -526,8 +508,7 @@ class CompatibilityEngine:
         agg += min(0.1, empty * 0.03)
         return min(1.0, agg)
 
-    def _get_answers_as_dict(self, user_profile_id: str) -> dict:
-        session = self._get_session()
+    def _get_answers_as_dict(self, user_profile_id: str, session) -> dict:
         answers = session.query(UserQuestionnaireAnswer).filter(
             UserQuestionnaireAnswer.user_profile_id == user_profile_id
         ).all()
