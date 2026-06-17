@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 import asyncio
+import logging
 
 from app.database.session import get_session, session_scope
 from app.database.models.user import UserQuestionnaireAnswer, UserProfile
@@ -10,6 +11,8 @@ from app.services.matching.feature_encoding import (
     weighted_similarity,
     load_questionnaire_weights_and_metadata,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class CompatibilityEngine:
@@ -384,10 +387,7 @@ class CompatibilityEngine:
                 property_check = property_checks.get(property_id)
 
                 if not property_check["exists"]:
-                    property_scores.append({
-                        "property_id": property_id,
-                        "error": property_check.get("error", "Property not found")
-                    })
+                    logger.warning(f"Skipping property_id={property_id}: {property_check.get('error', 'Property not found')}")
                     continue
 
                 # Property exists - fetch occupants and compute score
@@ -440,8 +440,11 @@ class CompatibilityEngine:
                     "property_match_score": round(property_score, 4)
                 })
 
+            # Filter out any items that don't have property_match_score (shouldn't happen, but safety check)
+            valid_matches = [item for item in property_scores if "property_match_score" in item]
+
             return {
-                "matches": property_scores
+                "matches": valid_matches
             }
         finally:
             session.close()
