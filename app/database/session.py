@@ -18,7 +18,7 @@ _engine_failed = False
 def _log_database_config(url: str):
     """Log database connection details and pool configuration."""
     parsed = urlparse(url)
-    db_host = parsed.host
+    db_host = parsed.hostname
     db_port = parsed.port
     db_name = parsed.path.lstrip("/")
     sslmode = parse_qs(parsed.query).get("sslmode", [""])[0]
