@@ -20,9 +20,20 @@ class QuestionnaireRepository:
     def get_categories(self):
         """Get all questionnaire categories with their questions."""
         with session_scope() as session:
-            return session.query(QuestionnaireCategory)\
+            categories = session.query(QuestionnaireCategory)\
                 .options(joinedload(QuestionnaireCategory.questions))\
                 .order_by(QuestionnaireCategory.sort_order).all()
+            # Convert to dicts to avoid DetachedInstanceError after session closes
+            return [
+                {
+                    "id": cat.id,
+                    "name_ar": cat.name_ar,
+                    "name_en": cat.name_en,
+                    "sort_order": cat.sort_order,
+                    "questions": list(cat.questions)  # Force load before session closes
+                }
+                for cat in categories
+            ]
 
     def get_questions(self, category_id: int = None):
         """Get active questions, optionally filtered by category."""

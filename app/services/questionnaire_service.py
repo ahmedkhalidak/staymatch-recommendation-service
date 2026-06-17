@@ -29,12 +29,12 @@ class QuestionnaireService:
         categories = self.repo.get_categories()
         result = []
         for cat in categories:
-            questions = cat.questions if hasattr(cat, "questions") and cat.questions else []
+            questions = cat.get("questions", [])
             result.append({
                 "category": {
-                    "id": cat.id,
-                    "name_ar": cat.name_ar,
-                    "name_en": cat.name_en,
+                    "id": cat["id"],
+                    "name_ar": cat["name_ar"],
+                    "name_en": cat["name_en"],
                 },
                 "questions": [
                     self._transform_question(q)
