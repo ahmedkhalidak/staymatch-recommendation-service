@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Query, Body, Depends
 from sqlalchemy import func
 from typing import List
+import logging
 
 from app.repositories.questionnaire_repo import QuestionnaireRepository
 from app.services.questionnaire_service import QuestionnaireService
@@ -22,6 +23,8 @@ from app.services.profile_questionnaire_service import ProfileQuestionnaireServi
 from app.core.security import get_current_user, CurrentUser
 
 router = APIRouter()
+
+logger = logging.getLogger("staymatch.router")
 
 # Tags for Swagger documentation
 tags_metadata = [
@@ -196,7 +199,11 @@ async def compute_shared_properties_match(current_user: CurrentUser = Depends(ge
     }
 })
 def list_questions():
-    return {"questions": questionnaire_service.get_all_questions()}
+    try:
+        return {"questions": questionnaire_service.get_all_questions()}
+    except Exception as e:
+        logger.exception("QUESTIONNAIRE_QUESTIONS_FAILED type=%s msg=%s", type(e).__name__, str(e))
+        raise
 
 
 @router.post("/questionnaire/answers", tags=["Questionnaire"], summary="Submit questionnaire answers for a user", description="Save questionnaire answers submitted by a user. Accepts direct map of machine_key to answer_scale (no wrapper object). Returns status confirmation and answers count.", response_model=QuestionnaireAnswersSubmitResponse, responses={
