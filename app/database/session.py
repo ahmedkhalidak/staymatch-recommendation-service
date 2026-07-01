@@ -42,8 +42,9 @@ def get_engine():
                 database_url,
                 pool_pre_ping=True,
                 pool_recycle=300,
-                pool_size=5,
-                max_overflow=10,
+                pool_size=20,
+                max_overflow=30,
+                pool_timeout=60,
                 pool_use_lifo=True,
                 echo=False,
                 connect_args={
